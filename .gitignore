@@ -1,0 +1,12 @@
+.venv/
+dist/
+build/
+__pycache__/
+*.py[cod]
+*.pyo
+.idea/
+logs/
+*.log
+models/
+current_bag.txt
+caudio.db
