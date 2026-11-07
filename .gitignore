@@ -9,4 +9,4 @@ logs/
 *.log
 models/
 current_bag.txt
-caudio.db
+gspraudio.db

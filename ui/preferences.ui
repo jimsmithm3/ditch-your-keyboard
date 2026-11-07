@@ -1,0 +1,761 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ui version="4.0">
+ <class>popupPreferences</class>
+ <widget class="QWidget" name="preferencesPage">
+  <layout class="QVBoxLayout" name="pageLayout"><item><widget class="QWidget" name="layoutWidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <property name="leftMargin">
+     <number>9</number>
+    </property>
+    <property name="rightMargin">
+     <number>9</number>
+    </property>
+    <item>
+     <widget class="QStackedWidget" name="ui_main_pagesSW">
+      <property name="font">
+       <font>
+        <pointsize>9</pointsize>
+       </font>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Panel</enum>
+      </property>
+      <property name="lineWidth">
+       <number>0</number>
+      </property>
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="page_9">
+       <layout class="QVBoxLayout" name="horizontalLayout_3">
+        <item>
+         <widget class="QGroupBox" name="groupBox_10">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>60</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>9</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="title">
+           <string>Runtime Prefs</string>
+          </property>
+          <widget class="QPushButton" name="ui_pref_filterClearPB">
+           <property name="geometry">
+            <rect>
+             <x>430</x>
+             <y>20</y>
+             <width>31</width>
+             <height>23</height>
+            </rect>
+           </property>
+           <property name="toolTip">
+            <string>Clear Filter</string>
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           </widget>
+          <widget class="QLabel" name="label_33">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>20</y>
+             <width>31</width>
+             <height>20</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>8</pointsize>
+             <weight>50</weight>
+             <bold>false</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Filter:</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+          <widget class="QLineEdit" name="ui_pref_filterLE">
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="geometry">
+            <rect>
+             <x>50</x>
+             <y>20</y>
+             <width>171</width>
+             <height>24</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>8</pointsize>
+             <weight>50</weight>
+             <bold>false</bold>
+            </font>
+           </property>
+           <property name="toolTip">
+            <string>Fitler down bundle results</string>
+           </property>
+           <property name="statusTip">
+            <string />
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           <property name="readOnly">
+            <bool>false</bool>
+           </property>
+           <property name="placeholderText">
+            <string />
+           </property>
+          </widget>
+          <widget class="QComboBox" name="ui_pref_filterColumnDD">
+           <property name="geometry">
+            <rect>
+             <x>230</x>
+             <y>20</y>
+             <width>71</width>
+             <height>22</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>8</pointsize>
+             <weight>50</weight>
+             <bold>false</bold>
+            </font>
+           </property>
+           <property name="editable">
+            <bool>false</bool>
+           </property>
+           <property name="currentText">
+            <string>Any</string>
+           </property>
+           <property name="currentIndex">
+            <number>0</number>
+           </property>
+           <item>
+            <property name="text">
+             <string>Any</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Pref</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Descr</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Area</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Default</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Modified</string>
+            </property>
+           </item>
+          </widget>
+          <widget class="QCheckBox" name="ui_pref_hideUnchangedTB">
+           <property name="geometry">
+            <rect>
+             <x>310</x>
+             <y>20</y>
+             <width>111</width>
+             <height>18</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>8</pointsize>
+             <weight>50</weight>
+             <bold>false</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Hide Unchanged</string>
+           </property>
+           <property name="checked">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableView" name="ui_pref_rtpTV">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>7</pointsize>
+            <weight>50</weight>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="horizontalScrollBarPolicy">
+           <enum>Qt::ScrollBarAlwaysOn</enum>
+          </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::SingleSelection</enum>
+          </property>
+          <property name="selectionBehavior">
+           <enum>QAbstractItemView::SelectRows</enum>
+          </property>
+          <property name="sortingEnabled">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="groupBox_5">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>65</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>9</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="title">
+           <string>Update</string>
+          </property>
+          <widget class="QStackedWidget" name="ui_pref_updateSW">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>20</y>
+             <width>711</width>
+             <height>41</height>
+            </rect>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>60</height>
+            </size>
+           </property>
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="frameShadow">
+            <enum>QFrame::Plain</enum>
+           </property>
+           <property name="currentIndex">
+            <number>5</number>
+           </property>
+           <widget class="QWidget" name="ui_pref_updateBlankP" />
+           <widget class="QWidget" name="ui_pref_updateDropDownP">
+            <widget class="QComboBox" name="ui_pref_updateDropdownDD">
+             <property name="geometry">
+              <rect>
+               <x>180</x>
+               <y>8</y>
+               <width>191</width>
+               <height>22</height>
+              </rect>
+             </property>
+            </widget>
+            <widget class="QLabel" name="ui_pref_updateDropdownLL">
+             <property name="geometry">
+              <rect>
+               <x>20</x>
+               <y>10</y>
+               <width>151</width>
+               <height>16</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>7</pointsize>
+               <weight>75</weight>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+             </property>
+            </widget>
+           </widget>
+           <widget class="QWidget" name="ui_pref_updateFolderP">
+            <widget class="QFrame" name="ui_pref_updateF">
+             <property name="geometry">
+              <rect>
+               <x>0</x>
+               <y>0</y>
+               <width>721</width>
+               <height>61</height>
+              </rect>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::StyledPanel</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Raised</enum>
+             </property>
+             <widget class="QLabel" name="ui_pref_updateFolderL">
+              <property name="geometry">
+               <rect>
+                <x>180</x>
+                <y>10</y>
+                <width>371</width>
+                <height>20</height>
+               </rect>
+              </property>
+              <property name="font">
+               <font>
+                <pointsize>8</pointsize>
+                <weight>50</weight>
+                <bold>false</bold>
+               </font>
+              </property>
+              <property name="toolTip">
+               <string>Folder name to create for the project</string>
+              </property>
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+             </widget>
+             <widget class="QPushButton" name="ui_pref_updateFolderPB">
+              <property name="enabled">
+               <bool>true</bool>
+              </property>
+              <property name="geometry">
+               <rect>
+                <x>560</x>
+                <y>10</y>
+                <width>31</width>
+                <height>24</height>
+               </rect>
+              </property>
+              <property name="toolTip">
+               <string>Runner Folder Picker</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="iconSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+             <widget class="QLabel" name="ui_pref_updateFolderLL">
+              <property name="geometry">
+               <rect>
+                <x>0</x>
+                <y>10</y>
+                <width>161</width>
+                <height>20</height>
+               </rect>
+              </property>
+              <property name="font">
+               <font>
+                <pointsize>7</pointsize>
+                <weight>75</weight>
+                <bold>true</bold>
+               </font>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </widget>
+           </widget>
+           <widget class="QWidget" name="ui_pref_updateFileP">
+            <widget class="QPushButton" name="ui_pref_updateFilePB">
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="geometry">
+              <rect>
+               <x>560</x>
+               <y>10</y>
+               <width>31</width>
+               <height>24</height>
+              </rect>
+             </property>
+             <property name="toolTip">
+              <string>Runner Folder Picker</string>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             <property name="iconSize">
+              <size>
+               <width>16</width>
+               <height>16</height>
+              </size>
+             </property>
+            </widget>
+            <widget class="QLabel" name="ui_pref_updateFileLL">
+             <property name="geometry">
+              <rect>
+               <x>30</x>
+               <y>10</y>
+               <width>141</width>
+               <height>16</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>7</pointsize>
+               <weight>75</weight>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+             </property>
+            </widget>
+            <widget class="QLabel" name="ui_pref_updateFileL">
+             <property name="geometry">
+              <rect>
+               <x>180</x>
+               <y>10</y>
+               <width>371</width>
+               <height>20</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>8</pointsize>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="toolTip">
+              <string>Folder name to create for the project</string>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::StyledPanel</enum>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+            </widget>
+           </widget>
+           <widget class="QWidget" name="page_10">
+            <widget class="QLabel" name="ui_pref_updateTextL">
+             <property name="geometry">
+              <rect>
+               <x>30</x>
+               <y>10</y>
+               <width>141</width>
+               <height>16</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>7</pointsize>
+               <weight>75</weight>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+             </property>
+            </widget>
+            <widget class="QLineEdit" name="ui_pref_updateTextLE">
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="geometry">
+              <rect>
+               <x>180</x>
+               <y>10</y>
+               <width>341</width>
+               <height>24</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>8</pointsize>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="toolTip">
+              <string>Fitler down bundle results</string>
+             </property>
+             <property name="statusTip">
+              <string />
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             <property name="readOnly">
+              <bool>false</bool>
+             </property>
+             <property name="placeholderText">
+              <string />
+             </property>
+            </widget>
+            <widget class="QPushButton" name="ui_pref_updateTextApplyPB">
+             <property name="geometry">
+              <rect>
+               <x>530</x>
+               <y>11</y>
+               <width>75</width>
+               <height>23</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>8</pointsize>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string>Apply</string>
+             </property>
+            </widget>
+           </widget>
+           <widget class="QWidget" name="page_11">
+            <widget class="QLabel" name="ui_pref_updateColorLL">
+             <property name="geometry">
+              <rect>
+               <x>20</x>
+               <y>9</y>
+               <width>151</width>
+               <height>16</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>7</pointsize>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+             </property>
+            </widget>
+            <widget class="QLabel" name="ui_pref_updateColorL">
+             <property name="geometry">
+              <rect>
+               <x>180</x>
+               <y>10</y>
+               <width>81</width>
+               <height>16</height>
+              </rect>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>9</pointsize>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">background-color: rgb(255, 255, 255);</string>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+            </widget>
+            <widget class="QPushButton" name="ui_pref_updateColorPB">
+             <property name="geometry">
+              <rect>
+               <x>270</x>
+               <y>10</y>
+               <width>31</width>
+               <height>23</height>
+              </rect>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+             </widget>
+           </widget>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="groupBox_3">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="title">
+           <string />
+          </property>
+          <widget class="QLabel" name="ui_perfChangedL">
+           <property name="geometry">
+            <rect>
+             <x>120</x>
+             <y>0</y>
+             <width>601</width>
+             <height>28</height>
+            </rect>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">color: rgb(0, 170, 255);</string>
+           </property>
+           <property name="text">
+            <string>None</string>
+           </property>
+          </widget>
+          <widget class="QLabel" name="label_34">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>5</y>
+             <width>101</width>
+             <height>20</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>8</pointsize>
+             <weight>50</weight>
+             <bold>false</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Pending Changes:</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      </widget>
+    </item>
+   </layout>
+  </widget>
+  </item><item><widget class="QWidget" name="layoutWidget_2">
+   <layout class="QHBoxLayout" name="horizontalLayout_4">
+    <item>
+     <spacer name="horizontalSpacer">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>40</width>
+        <height>20</height>
+       </size>
+      </property>
+     </spacer>
+    </item>
+    <item>
+     <widget class="QLabel" name="ui_perfChangedLOLD">
+      <property name="styleSheet">
+       <string notr="true">color: rgb(0, 170, 255);</string>
+      </property>
+      <property name="text">
+       <string />
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="uiSaveB">
+      <property name="font">
+       <font>
+        <pointsize>8</pointsize>
+        <weight>50</weight>
+        <bold>false</bold>
+       </font>
+      </property>
+      <property name="text">
+       <string>Save</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="uiCancelB">
+      <property name="text">
+       <string>Cancel</string>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  </item><item><widget class="QLabel" name="uiStatusL">
+   <property name="minimumSize">
+    <size>
+     <width>0</width>
+     <height>17</height>
+    </size>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>8</pointsize>
+     <weight>75</weight>
+     <bold>true</bold>
+    </font>
+   </property>
+   <property name="text">
+    <string />
+   </property>
+   <property name="margin">
+    <number>0</number>
+   </property>
+   <property name="indent">
+    <number>7</number>
+   </property>
+  </widget>
+ </item></layout><property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>891</width>
+    <height>597</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Dialog</string>
+  </property>
+  </widget>
+ <connections />
+</ui>

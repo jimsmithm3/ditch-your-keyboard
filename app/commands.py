@@ -1,6 +1,6 @@
 """Wake phrase and GSPro key map.
 
-The small Vosk model has no word "caudio" (lookup returns -1), so that
+The small Vosk model has no word "gspraudio" (lookup returns -1), so that
 phrase can never match. "hey caddie" / "hey caddy" are in the lexicon.
 Spoken phrases below are words that model does contain.
 """

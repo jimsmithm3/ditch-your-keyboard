@@ -1,5 +1,5 @@
 [project]
-name = "caudio"
+name = "gspraudio"
 version = "0.1.0"
 description = "Hands-free voice input that drives GSPro key bindings."
 readme = "README.md"

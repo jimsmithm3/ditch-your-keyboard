@@ -2,7 +2,9 @@
 
 import json
 import logging
+import math
 import queue
+from collections import deque
 import threading
 import time
 import winsound
@@ -16,7 +18,6 @@ from vosk import KaldiRecognizer, Model, SetLogLevel
 from app.bag import Bag, spoken_phrases
 from app.focus import prepare_gspro
 from app.commands import (
-    ARM_SECONDS,
     CLOSABLE,
     COMMANDS,
     STOPPABLE,
@@ -34,6 +35,7 @@ from app.commands import (
     spoken_text,
 )
 from app.paths import resource_path
+from app.prefs_page import Tuning, load_tuning
 
 log = logging.getLogger(__name__)
 
@@ -82,19 +84,26 @@ class VoiceListener(QObject):
     """
 
     level = Signal(int)
+    decibels = Signal(float)  # real-scale dB, or nan while the input is under the gate
+    calibrated = Signal(float)  # new offset from dBFS to real-scale dB
     status = Signal(str)
     heard = Signal(str)
     command = Signal(str)
     notice = Signal(str)
     club = Signal(str)
     mics = Signal(object)
+    transcript = Signal(str, float, float)  # text, average dB, peak dB of the voiced audio (nan if none)
 
-    def __init__(self) -> None:
+    def __init__(self, spl_offset: float = 0.0, tuning: Tuning | None = None) -> None:
         super().__init__()
         self.bag = Bag()
+        self.tuning = tuning or load_tuning()
         self.send_keys = True
+        # Added to dBFS to get real-scale dB (see calibrate()).
+        self.spl_offset = spl_offset
+        self._recent: deque = deque(maxlen=2000)  # (time, dBFS) of recent blocks
         self._commands: queue.Queue = queue.Queue()
-        self._thread = threading.Thread(target=self._thread_main, name="caudio-mic", daemon=True)
+        self._thread = threading.Thread(target=self._thread_main, name="gspraudio-mic", daemon=True)
         self._started = False
 
     def start(self) -> None:
@@ -108,6 +117,17 @@ class VoiceListener(QObject):
     def use_player(self) -> None:
         self.bag.reload()
         self._commands.put(("player", None))
+
+    def _spl(self, dbfs: float) -> float:
+        """A dBFS reading on the calibrated scale (the same dB people know from a sound meter)."""
+        return dbfs + self.spl_offset
+
+    def use_page(self, title: str) -> None:
+        self._commands.put(("page", title))
+
+    def calibrate(self, baseline_db: float) -> None:
+        """Measure the room for a few seconds and set the offset so it reads baseline_db."""
+        self._commands.put(("calibrate", float(baseline_db)))
 
     def shutdown(self) -> None:
         self._commands.put(("quit", None))
@@ -163,6 +183,11 @@ class VoiceListener(QObject):
         holding: str | None = None
         down = False
         hold_next = 0.0
+        # Mic setup page: same grammar as the commands, so the transcript shows what commands would hear.
+        # Voice page: the command recognizer runs. Any other page: neither.
+        capture_rec = None
+        capture_db: list[float] = []  # dB of each voiced block since the last utterance
+        voice_on = True
 
         def idle_status() -> None:
             if holding or open_stops:
@@ -186,6 +211,8 @@ class VoiceListener(QObject):
             last_partial = ""
             release()
             rec.Reset()
+            if capture_rec is not None:
+                capture_rec.Reset()
             try:
                 rate, stream = _open_stream(device, on_audio)
             except Exception as exc:
@@ -206,9 +233,29 @@ class VoiceListener(QObject):
                     del open_stops[name]
                 else:
                     open_stops[name] = keys
-            self.level.emit(_level(data))
+            db = _db(data)
+            now = time.time()
+            self._recent.append((now, db))
+            while self._recent and now - self._recent[0][0] > self.tuning.calibrate_seconds * 3:
+                self._recent.popleft()
+            self.level.emit(_percent(db, self.tuning.gate_db, self.tuning.full_scale_db))
+            # Calibrated dB, shown as-is even when quieter than the baseline. Only digital silence is withheld.
+            self.decibels.emit(self._spl(db) if db > SILENT_DB else float("nan"))
             pcm = data if rate == SAMPLE_RATE else _to_16k(data, rate)
             if not pcm:
+                return
+            if capture_rec is not None:
+                capture_db.append(db)
+                if capture_rec.AcceptWaveform(pcm):
+                    said = describe_heard(json.loads(capture_rec.Result()).get("text", "").strip())
+                    voiced = [level for level in capture_db if level >= self.tuning.gate_db]
+                    avg = self._spl(sum(voiced) / len(voiced)) if voiced else float("nan")
+                    peak = self._spl(max(capture_db)) if capture_db else float("nan")
+                    capture_db.clear()
+                    if said:
+                        self.transcript.emit(said, avg, peak)
+                return
+            if not voice_on:
                 return
             if rec.AcceptWaveform(pcm):
                 raw = json.loads(rec.Result()).get("text", "").strip()
@@ -334,7 +381,7 @@ class VoiceListener(QObject):
                     self.notice.emit(note)
                     idle_status()
                 elif contains_wake(text):
-                    armed_until = time.time() + ARM_SECONDS
+                    armed_until = time.time() + self.tuning.command_window_seconds
                     _beep(800, 80)
                     self.status.emit("Listening for a command")
             else:
@@ -366,6 +413,37 @@ class VoiceListener(QObject):
                         return
                     if kind == "device":
                         switch(value)
+                        continue
+                    if kind == "calibrate":
+                        cutoff = time.time() - self.tuning.calibrate_seconds
+                        levels = [db for when, db in self._recent if when >= cutoff and db > SILENT_DB]
+                        if levels:
+                            self.spl_offset = value - sum(levels) / len(levels)
+                            self.calibrated.emit(self.spl_offset)
+                            self.status.emit(f"Calibrated: room noise set to {value:.0f} dB")
+                        else:
+                            self.status.emit("No audio to calibrate from")
+                        continue
+                    if kind == "page":
+                        listening = value == "Voice"
+                        capturing = value == "Mic setup"
+                        if voice_on and not listening:
+                            release()
+                            armed_until = 0.0
+                        if listening and not voice_on:
+                            rec.Reset()
+                            armed_until = 0.0
+                            idle_status()
+                        voice_on = listening
+                        if capturing and capture_rec is None:
+                            capture_rec = KaldiRecognizer(
+                                model,
+                                SAMPLE_RATE,
+                                _grammar(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases() + (UNKNOWN_TOKEN,)),
+                            )
+                            capture_db.clear()
+                        elif not capturing:
+                            capture_rec = None
                         continue
                     if kind == "player":
                         release()
@@ -464,18 +542,47 @@ def _to_16k(data: bytes, source_rate: int) -> bytes:
     return dst.tobytes()
 
 
+UNKNOWN_TOKEN = "[unk]"
+UNKNOWN_TEXT = "(I have no idea what that was, but I heard it)"
+
+
+def describe_heard(raw: str) -> str:
+    """Turn a raw recognizer result into a line for the Mic setup page."""
+    tokens = raw.split()
+    if not tokens:
+        return ""
+    if all(token == UNKNOWN_TOKEN for token in tokens):
+        return UNKNOWN_TEXT
+    return " ".join("(unknown)" if token == UNKNOWN_TOKEN else token for token in tokens)
+
+
 def _grammar(phrases: tuple[str, ...]) -> str:
     return json.dumps(list(phrases))
 
 
-def _level(data: bytes) -> int:
+SILENT_DB = -120.0
+
+
+def _db(data: bytes) -> float:
+    """Loudness of one audio block in dB relative to full scale (0 dB = loudest)."""
     samples = array("h")
     samples.frombytes(data)
     if not samples:
-        return 0
+        return SILENT_DB
     total = sum(sample * sample for sample in samples)
     rms = (total / len(samples)) ** 0.5
-    return max(0, min(100, int(rms / 40)))
+    if rms <= 0:
+        return SILENT_DB
+    return 20 * math.log10(rms / 32768)
+
+
+# Below the gate the mic is only hiss, so the page shows "silent" and an empty bar.
+# The top is where the bar reads full. Adjust both once real speech numbers are in.
+def _percent(db: float, gate_db: float, full_scale_db: float) -> int:
+    if db < gate_db:
+        return 0
+    span = full_scale_db - gate_db
+    return max(0, min(100, int((db - gate_db) / span * 100)))
 
 
 def _beep(freq: int, ms: int) -> None:

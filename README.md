@@ -1,4 +1,4 @@
-# CAudio
+# gspraudio
 
 Hands-free voice commands for GSPro. This is the desktop skeleton only: a PySide6 window loaded from a Qt Designer `.ui` file, plus a windowed PyInstaller exe.
 
@@ -11,7 +11,7 @@ Requires Python 3.14. On this machine that is:
 `%LOCALAPPDATA%\Programs\Python\Python314\python.exe`
 
 ```powershell
-cd C:\dev\caudio
+cd C:\dev\gspraudio
 & "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe" -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
@@ -24,14 +24,14 @@ Working directory must be the project root (so `app` imports and `ui/` resolve).
 .\.venv\Scripts\python.exe main.py
 ```
 
-Logs go to `logs\caudio.log` (next to `caudio.exe` when frozen).
+Logs go to `logs\gspraudio.log` (next to `gspraudio.exe` when frozen).
 
 The **Test wiring** button sets the status label to `Wiring OK`.
 
 ## PyCharm
 
-1. Interpreter: `C:\dev\caudio\.venv`
-2. Run configuration: Script path `C:\dev\caudio\main.py`, working directory `C:\dev\caudio`
+1. Interpreter: `C:\dev\gspraudio\.venv`
+2. Run configuration: Script path `C:\dev\gspraudio\main.py`, working directory `C:\dev\gspraudio`
 3. Edit layout in Qt Designer: `ui\main_window.ui`. The app loads it at runtime with `QUiLoader`. Do not compile `.ui` to `.py`.
 
 ## Build
@@ -42,4 +42,4 @@ Windowed onefile (`console=False`). No code signing.
 .\scripts\build_exe.ps1
 ```
 
-Output: `dist\caudio.exe`. The `.ui` file is bundled via `datas` in `caudio.spec`.
+Output: `dist\gspraudio.exe`. The `.ui` file is bundled via `datas` in `gspraudio.spec`.

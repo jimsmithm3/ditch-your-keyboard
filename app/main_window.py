@@ -19,8 +19,11 @@ from app.bag_dialog import edit_bag
 from app.gspro_bag_dialog import edit_gspro_bag
 from app.commands_dialog import show_commands
 from app.listener import VoiceListener
+from app.mic_page import MicSetupPage
+from app.prefs_page import PrefsPage, saved_offset, send_keys_default
 from app.paths import resource_path
 from app.player_dialog import choose_player
+from app.shell import build_shell
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +57,14 @@ class MainWindow:
         self._gspro_bag = _require(self.window, QPushButton, "gsproBagButton")
         self._commands = _require(self.window, QPushButton, "commandsButton")
         self._change_player = _require(self.window, QPushButton, "changePlayerButton")
+        self._mic_page = MicSetupPage(
+            self._mic,
+            _require(self.window, QLabel, "micCaption"),
+            self._level,
+        )
+        self._prefs_page = PrefsPage(on_close=self._leave_prefs)
+        self.shell = build_shell(self.window, self._mic_page, self._prefs_page)
+        self.shell.watch(self._on_page)
 
         self.player_id = choose_player(self.window)
         self.listener = None
@@ -61,7 +72,9 @@ class MainWindow:
             return
         self._show_player()
 
-        self.listener = VoiceListener()
+        self.listener = VoiceListener(spl_offset=saved_offset())
+        self._mic_page.attach(self.listener)
+        self.listener.use_page(self.shell.current_title())
         self._show_bag()
         self.listener.level.connect(self._level.setValue)
         self.listener.status.connect(self._on_status)
@@ -71,6 +84,7 @@ class MainWindow:
         self.listener.club.connect(self._on_club)
         self._on_club(self.listener.bag.club)
         self.listener.mics.connect(self._on_mics)
+        self._send_keys.setChecked(send_keys_default())
         self._send_keys.toggled.connect(self._on_send_keys)
         self.listener.send_keys = self._send_keys.isChecked()
         self._edit_bag.clicked.connect(self._on_edit_bag)
@@ -82,6 +96,13 @@ class MainWindow:
         self.window.installEventFilter(self._closer)
         self.listener.start()
         log.info("loaded %s", ui_path)
+
+    def _leave_prefs(self) -> None:
+        self.shell.select("Voice")
+
+    def _on_page(self, title: str) -> None:
+        if self.listener is not None:
+            self.listener.use_page(title)
 
     def show(self) -> None:
         if self.listener is None:

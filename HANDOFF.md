@@ -1,19 +1,19 @@
-# CAudio handoff
+# gspraudio handoff
 
-Hands-free voice caddie for GSPro. PySide6 window, Vosk speech, keystrokes into the GSPro window. Python 3.14. Project root `C:\dev\caudio`. Run `main.py` from that root in PyCharm (SDK "Python 3.14 (caudio)"). Do not rebuild `dist\caudio.exe` unless asked. Do not commit unless asked.
+Hands-free voice caddie for GSPro. PySide6 window, Vosk speech, keystrokes into the GSPro window. Python 3.14. Project root `C:\dev\gspraudio`. Run `main.py` from that root in PyCharm (SDK "Python 3.14 (gspraudio)"). Do not rebuild `dist\gspraudio.exe` unless asked. Do not commit unless asked.
 
-Copy the whole project folder to the other computer. A git clone is not enough: `models/`, `caudio.db`, and `current_bag.txt` are gitignored, and this work may be uncommitted. Recreate `.venv` on the other machine rather than copying it. Use `PySide6_Essentials` and `shiboken6` only. Do not install the `PySide6` metapackage; it pulls WebEngine and has deleted `PySide6/__init__.py` before.
+Copy the whole project folder to the other computer. A git clone is not enough: `models/`, `gspraudio.db`, and `current_bag.txt` are gitignored, and this work may be uncommitted. Recreate `.venv` on the other machine rather than copying it. Use `PySide6_Essentials` and `shiboken6` only. Do not install the `PySide6` metapackage; it pulls WebEngine and has deleted `PySide6/__init__.py` before.
 
 ## Run
 
-- Venv: `C:\dev\caudio\.venv`
-- Wake words: "hey caddie" or "hey caddy". "caudio" is not in the small Vosk lexicon.
+- Venv: `C:\dev\gspraudio\.venv`
+- Wake words: "hey caddie" or "hey caddy". "gspraudio" is not in the small Vosk lexicon.
 - Model: `models/vosk-model-small-en-us-0.15`
 - Send keys defaults on.
 - One mic thread. Prefer DirectSound. Open 16000 Hz or resample. Do not call sounddevice from the GUI thread.
 - Focus GSPro once per command (`app/focus.py`: title contains "gspro", AttachThreadInput). On failure, do not send keys; the status bar says why. Do not re-focus between keys.
 - Main window UI is `ui/main_window.ui` loaded with QUiLoader. Dialogs are built in code.
-- Log: `logs/caudio.log`
+- Log: `logs/gspraudio.log`
 
 ## Voice
 
@@ -27,11 +27,11 @@ Grammar is wake phrases plus commands plus the active player's club phrases and 
 
 Bag order, driver toward putter: Driver, 3 wood, 5 wood, 3–9 iron, Utility iron last among irons, Pitching, Gap, Sand, 56, Lob, Putter. I steps toward the putter. K steps toward the driver. Saying "putter" sends U once and remembers that index. Saying putter again does not send U. A repeated non-putter club, when the putter is in the bag, sends U then K back to that club. With no putter, it walks K to the driver and I back up. Reset club is still K back to the driver.
 
-Edit bag is four columns (Woods, Irons, Wedges, Other), no scroll. Count label turns red over 14 clubs but save is still allowed. Empty selection is blocked. Utility iron and 56 wedge are CAudio-only. They are not in GSPro's 27-club enum and do not persist in the player database.
+Edit bag is four columns (Woods, Irons, Wedges, Other), no scroll. Count label turns red over 14 clubs but save is still allowed. Empty selection is blocked. Utility iron and 56 wedge are gspraudio-only. They are not in GSPro's 27-club enum and do not persist in the player database.
 
 ## Players and bags
 
-Local database: `caudio.db` next to the project (stdlib sqlite3).
+Local database: `gspraudio.db` next to the project (stdlib sqlite3).
 
 - `player`: id, name, `bag_id` (GSPro locker bag id, nullable)
 - `player_club`: player_id, club_index, active, nickname
@@ -67,8 +67,27 @@ Unwired rows stay in the commands table with a light red background and are not 
 - `app/focus.py` — one focus before keys
 - `app/main_window.py` — player, bag summary, status bar, buttons
 - `resources/gspro_clubs.json` — GSPro club enum
-- `caudio.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`
+- `gspraudio.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`
 
 ## Left alone on purpose
 
-Do not wire the red command rows unless asked. The GSPro bag dialog writes locker nicknames only. It does not update `caudio.db` or rebuild the recognizer. Player nicknames are the ones copied at create time, then heard after a restart or a player switch. README is stale. Esc doing nothing in GSPro was not a CAudio bug.
+Do not wire the red command rows unless asked. The GSPro bag dialog writes locker nicknames only. It does not update `gspraudio.db` or rebuild the recognizer. Player nicknames are the ones copied at create time, then heard after a restart or a player switch. README is stale. Esc doing nothing in GSPro was not a gspraudio bug.
+
+## Open work: "play match" (planned, not built)
+
+Goal: a voice command "play match" clicks GSPro's play-match button at a predefined spot, since GSPro has no API for it. Not started in code yet.
+
+Setup and constraints:
+
+- Dev machine has two monitors. Monitor 1 (LG HDR 4K, 3840x2160, 150% scaling) runs GSPro. Monitor 2 is the dev screen. Taskbar is on both. Monitor 2 was fixed by switching Multiple displays to Extend; it had been in duplicate mode.
+- GSPro's display dropdown lists only one entry, because both monitors are the same model. Launch GSPro on monitor 1 by selecting that entry, or make monitor 1 the main display if it lands on the wrong screen.
+- Keystrokes go to the focused window, not to a monitor. Mouse clicks depend on screen position.
+
+Plan:
+
+- Click relative to GSPro's window (find handle, read its rect, click at a fixed offset), not at fixed screen coordinates.
+- Keep GSPro windowed or borderless, not exclusive fullscreen, with a fixed size and position.
+- Make gspraudio DPI-aware so coordinates match the 150% scaling.
+- Before clicking, confirm GSPro is foreground and in the expected spot. If not, skip the click and report it in the status bar.
+- Check the click spot once with a screenshot before relying on it.
+- Open question: does GSPro expose the button to accessibility tools (UI Automation, by name)? If so, prefer that over coordinates.

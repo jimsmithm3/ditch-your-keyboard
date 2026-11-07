@@ -7,7 +7,7 @@ from app.paths import resource_path, writable_dir
 
 
 def db_path():
-    return writable_dir() / "caudio.db"
+    return writable_dir() / "gspraudio.db"
 
 
 def _catalog() -> list[dict]:
@@ -16,7 +16,7 @@ def _catalog() -> list[dict]:
 
 
 def display_name(club: dict) -> str:
-    return club["caudio"] or club["name"]
+    return club["spoken"] or club["name"]
 
 
 def connect() -> sqlite3.Connection:
@@ -148,7 +148,7 @@ def set_active_names(player_id: int, enabled: list[str]) -> list[str]:
     """Turn catalog clubs on or off. Clubs with no spoken name keep their flag."""
     chosen = set(enabled)
     catalog = _catalog()
-    spoken = {display_name(club) for club in catalog if club["caudio"]}
+    spoken = {display_name(club) for club in catalog if club["spoken"]}
     with connect() as con:
         current = {
             int(row["club_index"]): int(row["active"])

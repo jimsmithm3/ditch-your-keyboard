@@ -11,14 +11,26 @@ log = logging.getLogger(__name__)
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
+# Test mode (Developer page) turns this off so a minimized GSPro stays minimized.
+_restore_minimized = True
+
+
+def set_restore_minimized(flag: bool) -> None:
+    global _restore_minimized
+    _restore_minimized = flag
+
 
 def prepare_gspro() -> str | None:
     """Focus GSPro. None means it is in front. Otherwise a short reason."""
     try:
+        # Title must START with "gspro". A plain substring match also hit this
+        # app's own terminal ("◑ Caudio audio input for GSPro") and sent the
+        # club keys into it. The Open Connect window "SQG-GSPRO-Connect" is
+        # excluded by the same rule.
         windows = [
             win
             for win in gw.getAllWindows()
-            if "gspro" in (win.title or "").lower()
+            if (win.title or "").lower().startswith("gspro")
         ]
     except Exception:
         log.exception("could not list windows")
@@ -30,6 +42,9 @@ def prepare_gspro() -> str | None:
     win = next((item for item in windows if not item.isMinimized), windows[0])
     hwnd = int(win._hWnd)
     if win.isMinimized:
+        if not _restore_minimized:
+            log.info("GSPro is minimized; test mode leaves it alone")
+            return "GSPro is minimized (test mode)"
         win.restore()
     if _force_foreground(hwnd):
         time.sleep(0.05)
