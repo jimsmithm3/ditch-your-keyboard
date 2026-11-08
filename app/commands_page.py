@@ -1,4 +1,4 @@
-"""Table of GSPro commands. Unwired rows are light red.
+"""Commands page: the table of GSPro voice commands. Unwired rows are light red.
 
 The Tested column is saved in gspraudio.db (via app.prefs), keyed by each row's
 first phrase, so the list of what still needs testing survives restarts.
@@ -8,7 +8,6 @@ Click a Tested cell to toggle Yes / No.
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QDialog,
     QHeaderView,
     QLabel,
     QTableWidget,
@@ -55,11 +54,10 @@ def _test_key(command: Command) -> str:
     return f"tested.key:{stroke}"
 
 
-def show_commands(parent: QWidget) -> None:
-    dialog = QDialog(parent)
-    dialog.setWindowTitle("Commands")
-    dialog.resize(920, 520)
-    layout = QVBoxLayout(dialog)
+def build_commands_page() -> QWidget:
+    page = QWidget()
+    page.setObjectName("commandsPage")
+    layout = QVBoxLayout(page)
 
     summary = QLabel()
     layout.addWidget(summary)
@@ -139,4 +137,4 @@ def show_commands(parent: QWidget) -> None:
     table.resizeRowsToContents()
     refresh_summary()
     layout.addWidget(table)
-    dialog.exec()
+    return page

@@ -54,9 +54,39 @@ def prepare_gspro() -> str | None:
     return "could not focus GSPro"
 
 
-def _force_foreground(hwnd: int) -> bool:
-    if _user32.GetForegroundWindow() == hwnd:
-        return True
+def gspro_in_front() -> bool:
+    """True when the window in front is GSPro (same title rule as prepare_gspro)."""
+    buf = ctypes.create_unicode_buffer(256)
+    _user32.GetWindowTextW(_user32.GetForegroundWindow(), buf, 256)
+    return buf.value.lower().startswith("gspro")
+
+
+def ensure_gspro() -> str | None:
+    """Keys go to GSPro only. Focus GSPro again if something else took the front.
+    None means GSPro is in front. Otherwise a short reason, and no key should be sent."""
+    if gspro_in_front():
+        return None
+    return prepare_gspro()
+
+
+VK_MENU = 0x12  # Alt
+KEYEVENTF_KEYUP = 0x0002
+
+
+def _front_title() -> str:
+    buf = ctypes.create_unicode_buffer(256)
+    _user32.GetWindowTextW(_user32.GetForegroundWindow(), buf, 256)
+    return buf.value or "(no title)"
+
+
+def _alt_tap() -> None:
+    """Windows only lets a background app take the front right after input. An Alt tap
+    counts as that input. GSPro does not use Alt, so the tap does nothing there."""
+    _user32.keybd_event(VK_MENU, 0, 0, 0)
+    _user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+
+
+def _try_front(hwnd: int) -> bool:
     current = _kernel32.GetCurrentThreadId()
     foreground = _user32.GetForegroundWindow()
     foreground_thread = _user32.GetWindowThreadProcessId(foreground, None)
@@ -67,3 +97,16 @@ def _force_foreground(hwnd: int) -> bool:
     finally:
         _user32.AttachThreadInput(foreground_thread, current, False)
     return _user32.GetForegroundWindow() == hwnd
+
+
+def _force_foreground(hwnd: int) -> bool:
+    if _user32.GetForegroundWindow() == hwnd:
+        return True
+    for attempt in range(3):
+        if _try_front(hwnd):
+            return True
+        if attempt == 0:
+            _alt_tap()
+        time.sleep(0.05)
+    log.info("front window was %r when GSPro could not be focused", _front_title())
+    return False

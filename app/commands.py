@@ -6,6 +6,8 @@ Spoken phrases below are words that model does contain.
 """
 
 WAKE_PHRASES = ("hey caddie", "hey caddy")
+LAUNCH_PHRASE = "play golf"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
+DEBUG_PHRASE = "debug press"  # one test press per command, for click debugging; handled in listener.py
 ARM_SECONDS = 5.0
 
 class Command:
@@ -50,6 +52,19 @@ ROWS: tuple[Command, ...] = (
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
     Command(("stop",), "", "Stop aim, zoom, tee, or flyover", area="Aim"),
+    Command(("play golf",), "", "Start GSPro if it is not running", area="Launch"),
+    Command(("practice screen",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
+    Command(
+        ("gspro practice range screen", "gspro practice range"),
+        "",
+        "From the GSPro practice screen, open the range",
+        area="Launch",
+    ),
+    Command(("go to range",), "", "From the GSPro home screen, open the range", area="Launch"),
+    Command(("end round",), "", "From the GSPro range, open the menu and end the round", area="Launch"),
+    Command(("go back", "back screen"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),
+    Command(("home screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
+    Command(("debug press",), "", "Debug: one test press on the practice range card", area="Debug"),
     Command(("switch hand",), "n", "Switch hand", area="Aim", wired=False),
     Command(("club up",), "i", "Next club toward the putter", area="Club", heard=False),
     Command(("club down",), "k", "Next club toward the driver", area="Club", heard=False),
@@ -65,8 +80,8 @@ ROWS: tuple[Command, ...] = (
     Command(("green grid",), "g", "Green grid", area="View"),
     Command(("pin indicator", "show pin", "pin"), "p", "Pin indicator", area="View"),
     Command(("range finder",), "r", "Range finder", area="View", closes=True),
-    Command(("left",), "left", "Slide range finder left", area="View", hold=True),
-    Command(("right",), "right", "Slide range finder right", area="View", hold=True),
+    Command(("move left",), "left", "Slide range finder left", area="View", hold=True),
+    Command(("move right",), "right", "Slide range finder right", area="View", hold=True),
     Command(("hide ui", "hide interface"), "h", "Hide the interface", area="View"),
     Command(("show ui", "open menu"), "esc", "Show the interface", area="View"),
     Command(("clear tracer",), "f1", "Clear tracers", area="View", wired=False),

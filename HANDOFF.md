@@ -9,7 +9,7 @@ Copy the whole project folder to the other computer. A git clone is not enough: 
 - Venv: `C:\dev\gspraudio\.venv`
 - Wake words: "hey caddie" or "hey caddy". "gspraudio" is not in the small Vosk lexicon.
 - Model: `models/vosk-model-small-en-us-0.15`
-- Send keys defaults on.
+- Send keys defaults on. The switch is on the Developer page ("Send keys to GSPro"), saved as pref `send_keys_default`. It is no longer on the Voice page.
 - One mic thread. Prefer DirectSound. Open 16000 Hz or resample. Do not call sounddevice from the GUI thread.
 - Focus GSPro once per command (`app/focus.py`: title contains "gspro", AttachThreadInput). On failure, do not send keys; the status bar says why. Do not re-focus between keys.
 - Main window UI is `ui/main_window.ui` loaded with QUiLoader. Dialogs are built in code.
@@ -17,7 +17,11 @@ Copy the whole project folder to the other computer. A git clone is not enough: 
 
 ## Voice
 
-Grammar is wake phrases plus commands plus the active player's club phrases and nicknames. No `[unk]` in the grammar. Longest contained phrase wins. After a bare wake, the window turns light green for 5 seconds. A wake plus a command in the same phrase does not flash green. Recognizer is rebuilt when the player changes. Nicknames only work if every word is in the Vosk model.
+Grammar is wake phrases plus commands plus the active player's club phrases and nicknames. No `[unk]` in the grammar. Longest contained phrase wins.
+
+Preference `wake_required` (Preferences page, "Wake Phrase Required"), default off: a command is heard on its own, and "hey caddie" is not needed. Turn it on for noisy rooms, which needs a restart like the other voice settings. With it on, a bare wake opens a 5-second window, the window turns light green, and a command in that window fires. A wake plus a command in the same phrase does not flash green. Commands and the stop phrase are also heard alone when it is off, so "stop" stops holds. Recognizer is rebuilt when the player changes. Nicknames only work if every word is in the Vosk model.
+
+Recognizer choice is on Mic setup: Windows speech (WSAPI, default) or Vosk. It is saved as pref `recognizer` and applies after a restart. Windows speech (`app/wsapi_recognizer.py`) listens on the Windows default recording device, not the mic chosen in the app. It answers the same calls as Vosk, so `handle()` in `listener.py` is shared. Vosk still loads for the Mic setup transcript. If Windows speech fails to start, the app falls back to Vosk and logs it. Audio cannot be fed to Windows speech from our own stream: a pipe is refused and a Stream subclass does not get Read calls under pythonnet.
 
 "Continue" on aim left/right, zoom in/out, and tee left/right holds that key down until "hey caddy stop" or "hey caddie stop". It is one `keyDown`, not repeated taps. The key is released on stop, on another command, on player or mic change, if send-keys is turned off, and when the app closes. A counted phrase ("aim left five") is still separate presses, one through ten. Bare phrase is one press.
 
@@ -53,7 +57,15 @@ Unwired rows stay in the commands table with a light red background and are not 
 
 ## Open Connect
 
-`GSPconnect.exe` listens on `127.0.0.1:921`. One heartbeat was accepted and logged, and nothing was sent back. Do not send a shot into a live round. The socket is shot data in, and replies 200 (shot received) and 201 (hand, club, sometimes distance to pin). The connector also has codes 202 and 203, which are not in the public docs. There is no bag or nickname API on that socket. Docs: https://gsprogolf.com/GSProConnectV1.html
+Two apps must both be running for shots to reach GSPro. This setup was confirmed on this machine (GSPro v4, Nov 2026): test shots went through the launch monitor and registered in GSPro.
+
+- `SQG-GSPRO-Connect.exe` connects to the launch monitor over Bluetooth and to `127.0.0.1:921`.
+- `GSPconnect.exe` (APIv1 Connect) listens on `0.0.0.0:921` and connects to GSPro on `127.0.0.1:9050`.
+- `GSPro.exe` listens on `127.0.0.1:9050`.
+
+Check with `netstat -ano | findstr ":921 :9050"`. The launch monitor link is Bluetooth, so it does not show up in that output.
+
+Do not send a test shot into a live round. The socket is shot data in, and replies 200 (shot received) and 201 (hand, club, sometimes distance to pin). The connector also has codes 202 and 203, which are not in the public docs. There is no bag or nickname API on that socket. Docs: https://gsprogolf.com/GSProConnectV1.html
 
 ## Files
 
@@ -65,9 +77,36 @@ Unwired rows stay in the commands table with a light red background and are not 
 - `app/players.py` / `app/player_dialog.py` — local players and bags
 - `app/gspro_bag.py` / `app/gspro_bag_dialog.py` — locker bags and shortcut edit
 - `app/focus.py` — one focus before keys
+- `app/connector_ui.py` — after "play golf" starts the apps, clicks SQG-GSPRO-Connect's Scan and Connect (LM) and Connect (GSPro) in the background. It has no accessibility tree or native controls, so it clicks at fixed fractions of the window, and it reads the status lights from screen pixels. It clicks a button only when its light is not green. Layout positions are in the constants at the top. If the window layout changes, these need updating
+- `app/overview_page.py` — first page in the list, opened at startup, for the OBS floor display. Three circles: launch monitor connected, GSPro connected (both from the connector's status lights), connector running (process check). Shows the last command and last heard phrase. Voice commands also run on this page
+- `app/launch.py` — "play golf" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
 - `app/main_window.py` — player, bag summary, status bar, buttons
 - `resources/gspro_clubs.json` — GSPro club enum
 - `gspraudio.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`
+
+## GSPro menu sequences (add new chained commands here)
+
+- `app/gspro_ui.py`: screen positions and watch areas, as fractions of the GSPro window.
+- `app/gspro_sequences.py`: `SEQUENCES` maps a voice phrase to a list of `Step`s. A step clicks a target. If the step has a `watch` area, the runner waits for that area to change before the next step.
+- To add a command: add the positions to `gspro_ui.py`, add the sequence to `SEQUENCES`, and add a `Command` row with the same phrase in `commands.py`. The listener already routes every sequence phrase to the runner.
+- Current sequences: "practice screen", "gspro practice range screen" (also "gspro practice range"), "go to range" (practice screen then the range), and "end round" (game menu, END ROUND, CONFIRM).
+- Naming rule for screen commands: a screen name that is a single word gets the word "screen" after it ("practice screen"). A multi-word name can drop "screen" ("gspro practice range"), and the full form with "screen" is also accepted.
+- Clicks never move the pointer back after a click. Moving it right after a click cancelled the click.
+
+## Planned: know the screen, and get back to home
+
+- Identify the GSPro screen from its title text, read with Windows' built-in text recognition (Windows.Media.Ocr). Pixel patches are the fallback. Tested once on a cropped screenshot, where it read only the logo and menu words. A full-window capture per screen is still needed.
+- Get to home: click BACK (upper left) or the menu button (upper right), check the screen, and repeat with a limit on attempts. Not every screen has either button.
+- Add screens as they are met. Most layouts should repeat. Not every screen needs a route to home, mainly the ones reached while playing.
+- Later goal: from any screen, go home and then to the right screen, so "play a round" works from the range.
+
+## Clicks and debugging (standard for every click)
+
+- All mouse clicks go through `app/clicks.py` `click(x, y, label)`. It uses SendInput with absolute coordinates over the whole virtual desktop.
+- Each click logs one line: `click <label> at (x,y) front='<window title>'`. Window clicks in GSPro also log the GSPro window rect first (`gspro menu: window rect`).
+- Positions are fractions of the target window (`connector_ui.py`, `gspro_ui.py`). Check the log's rect and point against the screen when a click misses.
+- Timing is a hover pause (0.3 s), press, and hold (0.15 s), then release. Change it in `clicks.py` if a screen needs it.
+- To debug a miss: send the `click` and `gspro menu` lines, plus a screenshot from the moment of the click.
 
 ## Left alone on purpose
 
@@ -79,15 +118,15 @@ Goal: a voice command "play match" clicks GSPro's play-match button at a predefi
 
 Setup and constraints:
 
-- Dev machine has two monitors. Monitor 1 (LG HDR 4K, 3840x2160, 150% scaling) runs GSPro. Monitor 2 is the dev screen. Taskbar is on both. Monitor 2 was fixed by switching Multiple displays to Extend; it had been in duplicate mode.
+- Dev machine has two monitors. Monitor 1 (LG HDR 4K, 3840x2160, 125% scaling as of Nov 2026) runs GSPro. Monitor 2 is the dev screen. Taskbar is on both. Monitor 2 was fixed by switching Multiple displays to Extend; it had been in duplicate mode.
 - GSPro's display dropdown lists only one entry, because both monitors are the same model. Launch GSPro on monitor 1 by selecting that entry, or make monitor 1 the main display if it lands on the wrong screen.
 - Keystrokes go to the focused window, not to a monitor. Mouse clicks depend on screen position.
 
 Plan:
 
 - Click relative to GSPro's window (find handle, read its rect, click at a fixed offset), not at fixed screen coordinates.
-- Keep GSPro windowed or borderless, not exclusive fullscreen, with a fixed size and position.
-- Make gspraudio DPI-aware so coordinates match the 150% scaling.
+- GSPro runs full screen on its own monitor, shown on a projector. Full screen is not a fixed window position, so click coordinates must be taken from that monitor's full-screen rect (or use UI Automation if the button is exposed). Confirm this still works in full screen before relying on it.
+- Make gspraudio DPI-aware so coordinates match the 125% scaling. (`app/connector_ui.py` already does this.)
 - Before clicking, confirm GSPro is foreground and in the expected spot. If not, skip the click and report it in the status bar.
 - Check the click spot once with a screenshot before relying on it.
 - Open question: does GSPro expose the button to accessibility tools (UI Automation, by name)? If so, prefer that over coordinates.

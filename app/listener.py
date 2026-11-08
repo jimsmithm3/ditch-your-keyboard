@@ -16,11 +16,16 @@ from PySide6.QtCore import QObject, Signal
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
 from app.bag import Bag, spoken_phrases
-from app.focus import prepare_gspro
+from app.focus import ensure_gspro, prepare_gspro
+from app.debug_press import debug_press_in_background
+from app.gspro_sequences import SEQUENCES, run_in_background as run_gspro_sequence, set_ui_hidden
+from app.launch import start_play_golf
 from app.commands import (
     CLOSABLE,
     COMMANDS,
     STOPPABLE,
+    LAUNCH_PHRASE,
+    DEBUG_PHRASE,
     WAKE_PHRASES,
     contains_wake,
     is_continue,
@@ -35,10 +40,13 @@ from app.commands import (
     spoken_text,
 )
 from app.paths import resource_path
+from app.prefs import get_pref
 from app.prefs_page import Tuning, load_tuning
 
 log = logging.getLogger(__name__)
 
+VOICE_PAGES = ("Voice", "Overview")  # pages where voice commands run
+WAKE_REQUIRED_KEY = "wake_required"  # "True" = say "hey caddie" first; "False" = a command is heard alone
 SAMPLE_RATE = 16000
 MODEL_NAME = "vosk-model-small-en-us-0.15"
 
@@ -67,6 +75,17 @@ def input_devices() -> list[tuple[int, str]]:
     return [(index, str(dev["name"])) for index, dev in inputs]
 
 
+def _saved_mic_index(devices: list[tuple[int, str]]) -> int | None:
+    """Device indexes change when hardware is plugged or unplugged, so the mic is saved by name."""
+    from app.prefs import get_pref
+
+    saved = get_pref("mic_name", "")
+    for index, name in devices:
+        if saved and name == saved:
+            return index
+    return None
+
+
 def default_input_index() -> int | None:
     default = sd.default.device[0]
     try:
@@ -88,6 +107,7 @@ class VoiceListener(QObject):
     calibrated = Signal(float)  # new offset from dBFS to real-scale dB
     status = Signal(str)
     heard = Signal(str)
+    utterance = Signal(str)  # a finished phrase from the Voice page, before it is matched to a command
     command = Signal(str)
     notice = Signal(str)
     club = Signal(str)
@@ -137,7 +157,9 @@ class VoiceListener(QObject):
     def _thread_main(self) -> None:
         try:
             devices = input_devices()
-            preferred = default_input_index()
+            preferred = _saved_mic_index(devices)
+            if preferred is None:
+                preferred = default_input_index()
         except Exception as exc:
             log.exception("device list failed")
             self.status.emit(f"Microphone failed: {exc}")
@@ -157,11 +179,7 @@ class VoiceListener(QObject):
             # One grammar for the wake words and the commands. A separate wake
             # grammar turns the command into [unk] before the command listener
             # ever sees it, unless the result is exactly "hey caddy".
-            rec = KaldiRecognizer(
-                model,
-                SAMPLE_RATE,
-                _grammar(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases()),
-            )
+            rec = _new_recognizer(model, WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases())
         except Exception as exc:
             log.exception("model load failed")
             self.status.emit(f"Speech model failed: {exc}")
@@ -188,17 +206,29 @@ class VoiceListener(QObject):
         capture_rec = None
         capture_db: list[float] = []  # dB of each voiced block since the last utterance
         voice_on = True
+        # Off by default: a command is heard on its own. Turn on for noisy rooms (see Preferences).
+        wake_required = get_pref(WAKE_REQUIRED_KEY, "False") == "True"
 
         def idle_status() -> None:
-            if holding or open_stops:
-                self.status.emit('Say "hey caddy stop"')
+            if wake_required:
+                if holding or open_stops:
+                    self.status.emit('Say "hey caddy stop"')
+                else:
+                    self.status.emit('Say "hey caddie"')
+            elif holding or open_stops:
+                self.status.emit('Say "stop"')
             else:
-                self.status.emit('Say "hey caddie"')
+                self.status.emit("Say a command")
 
         def release() -> None:
             nonlocal holding, down
             if holding and down:
-                release_key(holding)
+                # The key-up must reach GSPro, or GSPro keeps the key down.
+                note = ensure_gspro()
+                if note:
+                    log.warning("key-up for %s not sent: %s", holding, note)
+                else:
+                    release_key(holding)
             holding = None
             down = False
 
@@ -253,6 +283,7 @@ class VoiceListener(QObject):
                     peak = self._spl(max(capture_db)) if capture_db else float("nan")
                     capture_db.clear()
                     if said:
+                        log.info("heard (capture) %s | avg %.1f dB | peak %.1f dB", said, avg, peak)
                         self.transcript.emit(said, avg, peak)
                 return
             if not voice_on:
@@ -265,8 +296,9 @@ class VoiceListener(QObject):
                 if not text or text == "hey":
                     return
                 self.heard.emit(text)
+                self.utterance.emit(text)
                 phrase = match_command(text)
-                if phrase and (contains_wake(text) or armed_until):
+                if phrase and (not wake_required or contains_wake(text) or armed_until):
                     armed_until = 0.0
                     note = ""
                     if phrase not in ("close", "stop") and not is_continue(phrase) and not holds_key(phrase):
@@ -311,9 +343,28 @@ class VoiceListener(QObject):
                                 else:
                                     press_keys(binding)
                                     toggle_stop(label, binding)
+                    elif phrase == LAUNCH_PHRASE:
+                        move = None
+                        sent = False  # no keys are sent; the note says what happened
+                        release()
+                        label = "play golf"
+                        note = start_play_golf(on_done=self.notice.emit)
+                    elif phrase in SEQUENCES:
+                        # GSPro menu sequences: clicks happen in GSPro's window, not as keys.
+                        move = None
+                        sent = False
+                        release()
+                        label = phrase
+                        note = run_gspro_sequence(phrase, on_done=self.notice.emit)
+                    elif phrase == DEBUG_PHRASE:
+                        move = None
+                        sent = False
+                        release()
+                        label = "debug press"
+                        note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase)
-                    if phrase in ("close", "stop"):
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase in SEQUENCES:
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)
@@ -373,6 +424,11 @@ class VoiceListener(QObject):
                             last_close = (phrase, binding)
                         if sent:
                             toggle_stop(phrase, binding)
+                            # Esc (show ui, open menu) always leaves the interface showing.
+                            if phrase in ("hide ui", "hide interface"):
+                                set_ui_hidden(True)
+                            elif binding == "esc":
+                                set_ui_hidden(False)
                     _beep(1200, 80)
                     held = move is not None and not move.keys
                     if not sent and not held and not note:
@@ -380,7 +436,7 @@ class VoiceListener(QObject):
                     self.command.emit(f"{phrase} → {label}")
                     self.notice.emit(note)
                     idle_status()
-                elif contains_wake(text):
+                elif wake_required and contains_wake(text):
                     armed_until = time.time() + self.tuning.command_window_seconds
                     _beep(800, 80)
                     self.status.emit("Listening for a command")
@@ -402,7 +458,14 @@ class VoiceListener(QObject):
                 if holding and not down and time.time() >= hold_next:
                     hold_next = time.time() + 0.12
                     if self.send_keys:
-                        press_keys(holding)
+                        note = ensure_gspro()
+                        if note:
+                            # GSPro lost the front and could not be brought back. Stop the repeat.
+                            release()
+                            self.notice.emit(note)
+                            idle_status()
+                        else:
+                            press_keys(holding)
                 try:
                     command = self._commands.get(timeout=0.05)
                 except queue.Empty:
@@ -425,7 +488,7 @@ class VoiceListener(QObject):
                             self.status.emit("No audio to calibrate from")
                         continue
                     if kind == "page":
-                        listening = value == "Voice"
+                        listening = value in VOICE_PAGES
                         capturing = value == "Mic setup"
                         if voice_on and not listening:
                             release()
@@ -448,11 +511,8 @@ class VoiceListener(QObject):
                     if kind == "player":
                         release()
                         armed_until = 0.0
-                        rec = KaldiRecognizer(
-                            model,
-                            SAMPLE_RATE,
-                            _grammar(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases()),
-                        )
+                        _close_recognizer(rec)
+                        rec = _new_recognizer(model, WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases())
                         idle_status()
                         continue
                 while True:
@@ -460,6 +520,9 @@ class VoiceListener(QObject):
                         handle(audio_q.get_nowait())
                     except queue.Empty:
                         break
+                    except Exception:
+                        # One bad phrase must not stop the listener thread for good.
+                        log.exception("voice handling failed; listening continues")
         finally:
             accept = False
             release()
@@ -558,6 +621,29 @@ def describe_heard(raw: str) -> str:
 
 def _grammar(phrases: tuple[str, ...]) -> str:
     return json.dumps(list(phrases))
+
+
+RECOGNIZER_KEY = "recognizer"  # "wsapi" (Windows speech, default) or "vosk"
+
+
+def _new_recognizer(model, phrases: tuple[str, ...]):
+    """Windows speech when chosen and it starts. Otherwise Vosk, so voice control still works."""
+    from app.prefs import get_pref
+
+    if get_pref(RECOGNIZER_KEY, "wsapi") == "wsapi":
+        try:
+            from app.wsapi_recognizer import WsapiRecognizer
+
+            return WsapiRecognizer(phrases)
+        except Exception:
+            log.exception("windows speech failed to start, using Vosk")
+    return KaldiRecognizer(model, SAMPLE_RATE, _grammar(phrases))
+
+
+def _close_recognizer(rec) -> None:
+    close = getattr(rec, "close", None)
+    if close is not None:
+        close()
 
 
 SILENT_DB = -120.0

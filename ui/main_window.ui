@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>520</width>
-    <height>450</height>
+    <width>780</width>
+    <height>675</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -116,24 +116,7 @@
         </property>
        </widget>
       </item>
-      <item>
-       <widget class="QPushButton" name="commandsButton">
-        <property name="text">
-         <string>Commands</string>
-        </property>
-       </widget>
-      </item>
      </layout>
-    </item>
-    <item>
-     <widget class="QCheckBox" name="sendKeysCheck">
-      <property name="text">
-       <string>Send keys to the focused app</string>
-      </property>
-      <property name="checked">
-       <bool>true</bool>
-      </property>
-     </widget>
     </item>
    </layout>
   </widget>

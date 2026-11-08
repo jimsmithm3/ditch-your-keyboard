@@ -99,6 +99,16 @@ PREFS: list[PrefSpec] = [
         "FLOAT",
     ),
     PrefSpec(
+        "Wake Phrase Required",
+        "wake_required",
+        "On: say \"hey caddie\" before each command. Off: a command is heard on its own. Turn on for noisy rooms",
+        "VOICE",
+        "False",
+        "DROPDOWN",
+        "",
+        ("True", "False"),
+    ),
+    PrefSpec(
         "Send Keys At Start",
         "send_keys_default",
         "Whether keys are sent to GSPro when gspraudio starts",

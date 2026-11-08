@@ -8,10 +8,13 @@ main_window.py, which call listener.use_page().
 import math
 import time
 from collections import deque
+from datetime import datetime
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -27,10 +30,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.prefs import get_pref, set_pref
+from app.listener import RECOGNIZER_KEY
 from app.prefs_page import OFFSET_KEY, saved_offset
 
 BASELINE_KEY = "baseline_room_db"
-TRANSCRIPT_ROWS = 200
+TRANSCRIPT_ROWS = 2000  # a running log for research, so it is kept long
+COLUMNS = ["When", "Page", "Heard", "Action", "Avg dB", "Peak dB"]
+WHEN_COL, PAGE_COL, HEARD_COL, ACTION_COL, AVG_COL, PEAK_COL = range(6)
 SMOOTH_SECONDS = 0.5  # the level label averages this long; the bar is not smoothed
 
 
@@ -57,14 +63,24 @@ class MicSetupPage(QWidget):
         level_row.addWidget(self._db)
 
         recognizer = QGroupBox("Recognizer")
-        self._vosk = QRadioButton("Vosk (offline, in use now)")
-        self._vosk.setChecked(True)
-        self._wsapi = QRadioButton("Windows speech API (WSAPI), not built yet")
-        self._wsapi.setEnabled(False)
-        self._wsapi.setToolTip("Not built yet. Vosk stays active.")
+        self._vosk = QRadioButton("Vosk (offline)")
+        self._wsapi = QRadioButton("Windows speech API (WSAPI)")
+        self._wsapi.setToolTip(
+            "Listens on the Windows default recording device, not the mic chosen above. "
+            "Takes effect after a restart."
+        )
+        self._vosk.setToolTip("Takes effect after a restart.")
+        wsapi_on = get_pref(RECOGNIZER_KEY, "wsapi") == "wsapi"
+        self._wsapi.setChecked(wsapi_on)
+        self._vosk.setChecked(not wsapi_on)
+        self._wsapi.toggled.connect(self._on_recognizer)
+        self._recognizer_note = QLabel()
+        self._recognizer_note.setWordWrap(True)
         group_layout = QVBoxLayout(recognizer)
-        group_layout.addWidget(self._vosk)
         group_layout.addWidget(self._wsapi)
+        group_layout.addWidget(self._vosk)
+        group_layout.addWidget(self._recognizer_note)
+        self._show_recognizer_note()
 
         self._note = QLabel(
             "Capture audio: shows words the command grammar knows. Speech it can't "
@@ -72,20 +88,25 @@ class MicSetupPage(QWidget):
         )
         self._note.setWordWrap(True)
         clear = QPushButton("Clear")
+        copy = QPushButton("Copy")
+        copy.setToolTip("Copy the selected rows, or all rows if none are selected (Ctrl+C also works)")
         clear_row = QHBoxLayout()
         clear_row.addWidget(self._note, 1)
+        clear_row.addWidget(copy)
         clear_row.addWidget(clear)
 
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(["Heard", "Avg dB", "Peak dB"])
+        self._table = QTableWidget(0, len(COLUMNS))
+        self._table.setHorizontalHeaderLabels(COLUMNS)
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         header = self._table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        for column in range(len(COLUMNS)):
+            mode = QHeaderView.ResizeMode.Stretch if column == HEARD_COL else QHeaderView.ResizeMode.ResizeToContents
+            header.setSectionResizeMode(column, mode)
         clear.clicked.connect(lambda: self._table.setRowCount(0))
+        copy.clicked.connect(self._copy_rows)
+        QShortcut(QKeySequence.StandardKey.Copy, self._table, activated=self._copy_rows)
 
         # Calibration tunes this page's readout, so it lives here rather than in Preferences.
         self._listener = None
@@ -115,6 +136,8 @@ class MicSetupPage(QWidget):
     def attach(self, listener) -> None:
         self._listener = listener
         listener.transcript.connect(self._on_said)
+        listener.utterance.connect(self._on_voice_heard)
+        listener.command.connect(self._on_voice_command)
         listener.decibels.connect(self._on_db)
         listener.calibrated.connect(self._on_calibrated)
         listener.status.connect(self._on_listener_status)
@@ -158,11 +181,60 @@ class MicSetupPage(QWidget):
         mean = sum(level for _, level in self._recent) / len(self._recent)
         self._db.setText(_db_text(mean))
 
+    def _on_recognizer(self, wsapi_checked: bool) -> None:
+        set_pref(RECOGNIZER_KEY, "wsapi" if wsapi_checked else "vosk")
+        self._show_recognizer_note()
+
+    def _show_recognizer_note(self) -> None:
+        if self._wsapi.isChecked():
+            text = (
+                "Windows speech hears the Windows default recording device. Set that device "
+                "in Windows Sound settings to your mic. The chooser above still drives the "
+                "level meter. Restart the app after changing this."
+            )
+        else:
+            text = "Vosk hears the mic chosen above. Restart the app after changing this."
+        self._recognizer_note.setText(text)
+
+    def _copy_rows(self) -> None:
+        """Copy selected rows (or all rows) as tab-separated text, header first, so it pastes into a spreadsheet."""
+        rows = sorted({index.row() for index in self._table.selectionModel().selectedRows()})
+        if not rows:
+            rows = list(range(self._table.rowCount()))
+        if not rows:
+            return
+        lines = ["\t".join(COLUMNS)]
+        for row in rows:
+            cells = []
+            for column in range(self._table.columnCount()):
+                item = self._table.item(row, column)
+                cells.append(item.text() if item is not None else "")
+            lines.append("\t".join(cells))
+        QApplication.clipboard().setText("\n".join(lines))
+
     def _on_said(self, text: str, avg_db: float, peak_db: float) -> None:
+        """Mic setup capture: one row per phrase the capture recognizer heard."""
+        self._add_row("Mic setup", text, "", avg_db, peak_db)
+
+    def _on_voice_heard(self, text: str) -> None:
+        """Voice page: each finished phrase gets a row. The dB columns are left blank."""
+        self._add_row("Voice", text, "", float("nan"), float("nan"))
+
+    def _on_voice_command(self, text: str) -> None:
+        """The command result goes on the row of the phrase that caused it, which is the newest Voice row."""
+        if self._table.rowCount() == 0 or self._table.item(0, PAGE_COL).text() != "Voice":
+            return
+        self._table.setItem(0, ACTION_COL, QTableWidgetItem(text))
+
+    def _add_row(self, page: str, heard: str, action: str, avg_db: float, peak_db: float) -> None:
         """Newest row goes on top, so the latest line is always visible without scrolling."""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._table.insertRow(0)
-        self._table.setItem(0, 0, QTableWidgetItem(text))
-        for column, value in ((1, avg_db), (2, peak_db)):
+        self._table.setItem(0, WHEN_COL, QTableWidgetItem(now))
+        self._table.setItem(0, PAGE_COL, QTableWidgetItem(page))
+        self._table.setItem(0, HEARD_COL, QTableWidgetItem(heard))
+        self._table.setItem(0, ACTION_COL, QTableWidgetItem(action))
+        for column, value in ((AVG_COL, avg_db), (PEAK_COL, peak_db)):
             label = "—" if math.isnan(value) else _db_text(value)
             item = QTableWidgetItem(label)
             item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)

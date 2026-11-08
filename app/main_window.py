@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
 
 from app.bag_dialog import edit_bag
 from app.gspro_bag_dialog import edit_gspro_bag
-from app.commands_dialog import show_commands
 from app.listener import VoiceListener
 from app.mic_page import MicSetupPage
 from app.prefs_page import PrefsPage, saved_offset, send_keys_default
@@ -52,10 +51,8 @@ class MainWindow:
         self._club = _require(self.window, QLabel, "clubLabel")
         self._level = _require(self.window, QProgressBar, "levelBar")
         self._mic = _require(self.window, QComboBox, "micCombo")
-        self._send_keys = _require(self.window, QCheckBox, "sendKeysCheck")
         self._edit_bag = _require(self.window, QPushButton, "editBagButton")
         self._gspro_bag = _require(self.window, QPushButton, "gsproBagButton")
-        self._commands = _require(self.window, QPushButton, "commandsButton")
         self._change_player = _require(self.window, QPushButton, "changePlayerButton")
         self._mic_page = MicSetupPage(
             self._mic,
@@ -75,6 +72,7 @@ class MainWindow:
         self.listener = VoiceListener(spl_offset=saved_offset())
         self._mic_page.attach(self.listener)
         self.listener.use_page(self.shell.current_title())
+        self.shell.widget("Overview").attach(self.listener)
         self._show_bag()
         self.listener.level.connect(self._level.setValue)
         self.listener.status.connect(self._on_status)
@@ -84,12 +82,12 @@ class MainWindow:
         self.listener.club.connect(self._on_club)
         self._on_club(self.listener.bag.club)
         self.listener.mics.connect(self._on_mics)
-        self._send_keys.setChecked(send_keys_default())
+        # The send-keys switch lives on the Developer page. Keys go out by default.
+        self._send_keys = self.shell.widget("Developer").send_keys_check
         self._send_keys.toggled.connect(self._on_send_keys)
         self.listener.send_keys = self._send_keys.isChecked()
         self._edit_bag.clicked.connect(self._on_edit_bag)
         self._gspro_bag.clicked.connect(lambda: edit_gspro_bag(self.window))
-        self._commands.clicked.connect(self._on_commands)
         self._change_player.clicked.connect(self._on_change_player)
         self._mic.currentIndexChanged.connect(self._on_mic_changed)
         self._closer = _CloseFilter(self.listener, self.window)
@@ -129,7 +127,11 @@ class MainWindow:
         if self._mic.currentIndex() < 0:
             return
         device = self._mic.currentData()
-        log.info("using mic %s", device)
+        name = self._mic.currentText()
+        log.info("using mic %s (%s)", device, name)
+        from app.prefs import set_pref
+
+        set_pref("mic_name", name)
         self.listener.use_device(int(device))
 
     def _show_player(self) -> None:
@@ -154,9 +156,6 @@ class MainWindow:
         self.listener.use_player()
         self._show_bag()
         self._on_club(self.listener.bag.club)
-
-    def _on_commands(self) -> None:
-        show_commands(self.window)
 
     def _on_edit_bag(self) -> None:
         if edit_bag(self.window, self.listener.bag):

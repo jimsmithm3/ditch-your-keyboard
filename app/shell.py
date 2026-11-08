@@ -15,7 +15,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.commands_page import build_commands_page
 from app.developer_page import build_developer_page
+from app.hardware_page import build_hardware_page
+from app.overview_page import OverviewPage
 from app.paths import writable_dir
 
 LOG_TAIL_LINES = 300
@@ -60,6 +63,16 @@ class Shell:
         if self._nav.count() == 1:
             self._nav.setCurrentRow(0)
 
+    def insert_page(self, title: str, page: QWidget, index: int = 0) -> None:
+        self._stack.insertWidget(index, page)
+        self._nav.insertItem(index, title)
+
+    def widget(self, title: str) -> QWidget | None:
+        for row in range(self._nav.count()):
+            if self._nav.item(row).text() == title:
+                return self._stack.widget(row)
+        return None
+
     def select(self, title: str) -> None:
         for row in range(self._nav.count()):
             if self._nav.item(row).text() == title:
@@ -72,9 +85,14 @@ def build_shell(window: QMainWindow, mic_page: QWidget, prefs_page: QWidget) -> 
     shell = Shell(window)
     shell.add_page("Voice", voice_page)
     shell.add_page("Mic setup", mic_page)
+    shell.add_page("Commands", build_commands_page())
+    shell.add_page("Hardware", build_hardware_page())
     shell.add_page("Preferences", prefs_page)
     shell.add_page("Log", _log_page())
     shell.add_page("Developer", build_developer_page())
+    # Overview is first in the list and opens first. It listens for voice commands like the Voice page.
+    shell.insert_page("Overview", OverviewPage(), 0)
+    shell.select("Overview")
     return shell
 
 

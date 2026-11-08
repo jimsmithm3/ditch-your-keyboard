@@ -8,7 +8,7 @@ Golf sim at home. GSPro is projected onto a wall, so the player is standing and 
 
 ## Setup
 
-- GSPro runs maximized on its own monitor (monitor 1, LG 4K, 150% scaling). It's projected to the wall.
+- GSPro runs full screen on its own monitor (monitor 1, LG 4K, 125% scaling). It's shown on a projector onto the wall.
 - Dev monitor (monitor 2) is the work screen, with the taskbar on both monitors.
 - GSPro has no API for most actions, so keystrokes are the interface.
 
