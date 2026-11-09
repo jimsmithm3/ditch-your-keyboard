@@ -1,8 +1,9 @@
 """Developer page: switches for testing gspraudio without disturbing GSPro."""
 
-from PySide6.QtWidgets import QCheckBox, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app import focus
+from app.gspro_courses import sync_from_gspro
 from app.prefs import get_bool, get_pref, set_bool, set_pref
 
 TEST_MODE_KEY = "test_mode"
@@ -33,6 +34,23 @@ def build_developer_page() -> QWidget:
     )
     hint.setWordWrap(True)
     layout.addWidget(hint)
+
+    # Replaces our course list with GSPro's. The voice grammar reads it at startup.
+    sync_button = QPushButton("Sync courses from GSPro")
+    sync_status = QLabel("")
+    sync_status.setWordWrap(True)
+
+    def on_sync() -> None:
+        try:
+            count = sync_from_gspro()
+        except Exception as exc:  # GSPro's database may be missing or locked
+            sync_status.setText(f"Sync failed: {exc}")
+            return
+        sync_status.setText(f"Saved {count} courses. Restart the app so the voice grammar picks them up.")
+
+    sync_button.clicked.connect(on_sync)
+    layout.addWidget(sync_button)
+    layout.addWidget(sync_status)
     layout.addStretch(1)
     return page
 

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.commands import ROWS, Command, key_text, voice_text
+from app.commands import ROWS, Command, key_text
 from app.prefs import get_bool, set_bool
 
 _UNWIRED = QBrush(QColor(255, 214, 214))
@@ -52,6 +52,15 @@ def _test_key(command: Command) -> str:
     if stroke in _SHARED:
         return f"tested.key:{stroke}|{command.phrases[0]}"
     return f"tested.key:{stroke}"
+
+
+def _voice_cell(command: Command) -> str:
+    """Each alternate phrase on its own line in the cell, so the column stays narrow."""
+    if command.hold and not command.repeat:
+        return "\n".join(f"{phrase} (until stop)" for phrase in command.phrases)
+    if not command.repeat:
+        return "\n".join(command.phrases)
+    return "\n".join(f"{phrase} (one to ten, or continue)" for phrase in command.phrases)
 
 
 def build_commands_page() -> QWidget:
@@ -91,7 +100,7 @@ def build_commands_page() -> QWidget:
         values = (
             command.area,
             key_text(command.keys),
-            voice_text(command),
+            _voice_cell(command),
             command.description,
             "Yes" if command.closes else "",
             "Yes" if command.repeat or command.hold else "",

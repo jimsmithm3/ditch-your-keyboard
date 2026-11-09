@@ -62,7 +62,10 @@ def _launch(exe: Path, folder: Path, label: str) -> str:
 def start_gspro() -> str:
     """Start GSPro if it is not running. Returns a short note for the status bar."""
     global _started_at
+    from app.gspro_sequences import mark_running, set_screen
+
     if _process_running("GSpro.exe"):
+        mark_running()
         return "GSPro is already running"
     if _started_at is not None and time.monotonic() - _started_at < STARTING_SECONDS:
         return "GSPro is still starting"
@@ -70,6 +73,7 @@ def start_gspro() -> str:
     if note:
         return note
     _started_at = time.monotonic()
+    set_screen("home")  # a fresh start opens on the home screen
     return "Starting GSPro."
 
 
@@ -87,8 +91,32 @@ def start_connector() -> str:
     return "Starting SQG-GSPRO-Connect."
 
 
+def stop_connector() -> str:
+    """Close SQG-GSPRO-Connect by program name. Returns a short note."""
+    if not _process_running("SQG-GSPRO-Connect.exe"):
+        return "SQG-GSPRO-Connect is not running"
+    try:
+        result = subprocess.run(
+            ["taskkill", "/IM", "SQG-GSPRO-Connect.exe", "/T", "/F"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        log.exception("could not run taskkill for the connector")
+        return "could not close SQG-GSPRO-Connect"
+    if result.returncode != 0:
+        log.warning("taskkill for the connector failed: %s", result.stderr.strip() or result.stdout.strip())
+        return "could not close SQG-GSPRO-Connect"
+    log.info("closed SQG-GSPRO-Connect")
+    global _connector_started_at
+    _connector_started_at = None
+    return "Closed SQG-GSPRO-Connect."
+
+
 def start_play_golf(on_done=None) -> str:
-    """The "play golf" command: start GSPro and the connector, then click the connector's
+    """The "please play golf" command: start GSPro and the connector, then click the connector's
     Scan / Connect buttons in the background. on_done(note) reports the setup result."""
     from app.connector_ui import finish_setup_in_background
 

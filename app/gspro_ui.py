@@ -21,9 +21,31 @@ RANGE_CARD = (0.318, 0.712)  # GSPRO PRACTICE RANGE
 # Any screen with a BACK button (upper left). Nested screens have one BACK each, so say
 # "go back" again to go up another level.
 BACK_BUTTON = (0.06, 0.044)  # BACK, upper left
+EXIT_BUTTON = (0.06, 0.042)  # EXIT, upper left of the home screen
 # Home has no BACK, so the upper left is blank there. "home screen" clicks BACK until
 # this area stops changing, which means home. Everything below the header.
 HOME_WATCH = (0.0, 0.17, 1.0, 0.95)
+
+# On course practice: the course list. The search box starts with the cursor in it.
+ON_COURSE_CARD = (0.5, 0.72)  # ON COURSE PRACTICE on the practice screen
+ADDITIONAL_CARD = (0.682, 0.722)  # ADDITIONAL RANGES on the practice screen
+LOCAL_CARD = (0.135, 0.722)  # PLAY on the home screen, which opens LOCAL MATCH (the course list)
+
+# Mini map on the course screen. Its center is where a marker is dropped.
+MAP_SMALL_CENTER = (0.921, 0.758)  # the small map, lower right
+MAP_EXPANDED_CENTER = (0.855, 0.544)  # the map when expanded with S
+SEARCH_BOX = (0.35, 0.123)  # "What course do you want to play?"
+CLEAR_SEARCH_CLICK = (0.052, 0.125)  # first letter of the search text; a click here selects all of it
+FIRST_PLAY = (0.612, 0.208)  # PLAY on the first row of the list
+FILTER_INSTALLED = (0.731, 0.266)  # the Installed filter button (the whole list)
+FILTER_FAVORITES = (0.934, 0.266)  # the Favorites filter button
+COURSE_LIST_WATCH = (0.0, 0.17, 0.66, 0.95)  # the course rows; change when the search results change
+
+# Course play (after PLAY on round settings). MENU_BUTTON opens the game menu; MENU_CLOSE is its X.
+MENU_CLOSE = (0.970, 0.040)
+
+# Round settings (opens after a course's Play). The lower right button is "PLAY <course>".
+ROUND_PLAY = (0.884, 0.954)
 
 # Game menu (opens over the upper right of the range)
 END_ROUND_BUTTON = (0.903, 0.636)  # END ROUND at the bottom of the menu

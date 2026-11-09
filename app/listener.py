@@ -16,9 +16,31 @@ from PySide6.QtCore import QObject, Signal
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
 from app.bag import Bag, spoken_phrases
+from app.gspro_courses import course_phrases
+from app.gspro_tree import SYNC_PHRASES
 from app.focus import ensure_gspro, prepare_gspro
 from app.debug_press import debug_press_in_background
-from app.gspro_sequences import SEQUENCES, run_in_background as run_gspro_sequence, set_ui_hidden
+from app.gspro_sequences import (
+    COURSE_LIST_SCREENS,
+    SEQUENCES,
+    current_screen,
+    run_course_in_background,
+    toggle_map,
+    sync_screen,
+    run_in_background as run_gspro_sequence,
+    set_ui_hidden,
+    MARKER_DIRECTIONS,
+    FLIGHT_END_PHRASES,
+    FLIGHT_START_PHRASES,
+    MAP_MODE_PHRASES,
+    flight_mode_end,
+    flight_mode_start,
+    marker_active,
+    marker_move,
+    marker_end,
+    marker_start,
+    marker_stop,
+)
 from app.launch import start_play_golf
 from app.commands import (
     CLOSABLE,
@@ -26,6 +48,8 @@ from app.commands import (
     STOPPABLE,
     LAUNCH_PHRASE,
     DEBUG_PHRASE,
+    COURSE_PHRASE,
+    parse_course,
     WAKE_PHRASES,
     contains_wake,
     is_continue,
@@ -110,6 +134,7 @@ class VoiceListener(QObject):
     utterance = Signal(str)  # a finished phrase from the Voice page, before it is matched to a command
     command = Signal(str)
     notice = Signal(str)
+    mode = Signal(bool)  # True when listening, False after "stop listening"
     club = Signal(str)
     mics = Signal(object)
     transcript = Signal(str, float, float)  # text, average dB, peak dB of the voiced audio (nan if none)
@@ -119,6 +144,8 @@ class VoiceListener(QObject):
         self.bag = Bag()
         self.tuning = tuning or load_tuning()
         self.send_keys = True
+        self.listening = True  # False after "stop listening": only "start listening" is heard
+        self._course_grammar_on = False  # the course-name grammar is listened for only on On course practice
         # Added to dBFS to get real-scale dB (see calibrate()).
         self.spl_offset = spl_offset
         self._recent: deque = deque(maxlen=2000)  # (time, dBFS) of recent blocks
@@ -141,6 +168,21 @@ class VoiceListener(QObject):
     def _spl(self, dbfs: float) -> float:
         """A dBFS reading on the calibrated scale (the same dB people know from a sound meter)."""
         return dbfs + self.spl_offset
+
+    def _set_listening(self, on: bool) -> None:
+        self.listening = on
+        log.info("voice commands %s", "on" if on else "paused")
+        self.mode.emit(on)
+        self.notice.emit("Listening" if on else "Paused. Say start listening to resume.")
+
+    def _sync_course_grammar(self, rec) -> None:
+        """Listen for course names only while GSPro is on the On course practice screen."""
+        want = current_screen() in COURSE_LIST_SCREENS
+        if want == self._course_grammar_on:
+            return
+        self._course_grammar_on = want
+        if hasattr(rec, "set_group"):  # Vosk has no groups; it listens for all words at once
+            rec.set_group("courses", want)
 
     def use_page(self, title: str) -> None:
         self._commands.put(("page", title))
@@ -179,7 +221,7 @@ class VoiceListener(QObject):
             # One grammar for the wake words and the commands. A separate wake
             # grammar turns the command into [unk] before the command listener
             # ever sees it, unless the result is exactly "hey caddy".
-            rec = _new_recognizer(model, WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases())
+            rec = _new_recognizer(model, WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases(), {"courses": course_phrases()})
         except Exception as exc:
             log.exception("model load failed")
             self.status.emit(f"Speech model failed: {exc}")
@@ -288,6 +330,7 @@ class VoiceListener(QObject):
                 return
             if not voice_on:
                 return
+            self._sync_course_grammar(rec)
             if rec.AcceptWaveform(pcm):
                 raw = json.loads(rec.Result()).get("text", "").strip()
                 text = spoken_text(raw)
@@ -298,12 +341,17 @@ class VoiceListener(QObject):
                 self.heard.emit(text)
                 self.utterance.emit(text)
                 phrase = match_command(text)
+                if phrase in ("stop listening", "start listening"):
+                    self._set_listening(phrase == "start listening")
+                    return
+                if not self.listening:
+                    return  # paused: only "start listening" gets through
                 if phrase and (not wake_required or contains_wake(text) or armed_until):
                     armed_until = 0.0
                     note = ""
                     if phrase not in ("close", "stop") and not is_continue(phrase) and not holds_key(phrase):
                         release()
-                    if phrase == "stop":
+                    if phrase == "stop" and not marker_active():
                         move = None
                         had_hold = holding is not None
                         pending = dict(open_stops)
@@ -326,6 +374,23 @@ class VoiceListener(QObject):
                                     sent = True
                             elif pending and not had_hold:
                                 sent = False
+                    elif phrase == "stop" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_START_PHRASES or phrase in FLIGHT_END_PHRASES:
+                        # "stop" ends a marker that is moving; the marker phrases start one.
+                        move = None
+                        sent = False
+                        label = "marker"
+                        if phrase == "stop":
+                            note = marker_stop()
+                        elif phrase == "map mode start":
+                            note = marker_start()
+                        elif phrase == "map mode end":
+                            note = marker_end()
+                        elif phrase in FLIGHT_START_PHRASES:
+                            note = flight_mode_start()
+                        elif phrase in FLIGHT_END_PHRASES:
+                            note = flight_mode_end()
+                        else:
+                            note = marker_move(phrase)
                     elif phrase == "close":
                         move = None
                         release()
@@ -347,8 +412,22 @@ class VoiceListener(QObject):
                         move = None
                         sent = False  # no keys are sent; the note says what happened
                         release()
-                        label = "play golf"
+                        label = "please play golf"
                         note = start_play_golf(on_done=self.notice.emit)
+                    elif phrase.startswith(COURSE_PHRASE) and phrase not in SEQUENCES:  # "play screen" is a sequence
+                        move = None
+                        sent = False
+                        release()
+                        label = "play"
+                        course, then_now = parse_course(text)
+                        note = run_course_in_background(course, on_done=self.notice.emit, then_now=then_now)
+                    elif phrase in SYNC_PHRASES:
+                        # Tells the app which screen GSPro is on. No clicks, no keys.
+                        move = None
+                        sent = False
+                        release()
+                        label = phrase
+                        note = sync_screen(SYNC_PHRASES[phrase])
                     elif phrase in SEQUENCES:
                         # GSPro menu sequences: clicks happen in GSPro's window, not as keys.
                         move = None
@@ -364,7 +443,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase in SEQUENCES:
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_START_PHRASES or phrase in FLIGHT_END_PHRASES:
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)
@@ -429,6 +508,8 @@ class VoiceListener(QObject):
                                 set_ui_hidden(True)
                             elif binding == "esc":
                                 set_ui_hidden(False)
+                            if binding == "s":
+                                toggle_map()  # S expands or shrinks the mini map
                     _beep(1200, 80)
                     held = move is not None and not move.keys
                     if not sent and not held and not note:
@@ -502,7 +583,7 @@ class VoiceListener(QObject):
                             capture_rec = KaldiRecognizer(
                                 model,
                                 SAMPLE_RATE,
-                                _grammar(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases() + (UNKNOWN_TOKEN,)),
+                                _grammar(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases() + course_phrases() + (UNKNOWN_TOKEN,)),
                             )
                             capture_db.clear()
                         elif not capturing:
@@ -512,7 +593,8 @@ class VoiceListener(QObject):
                         release()
                         armed_until = 0.0
                         _close_recognizer(rec)
-                        rec = _new_recognizer(model, WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases())
+                        rec = _new_recognizer(model, WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases(), {"courses": course_phrases()})
+                        self._course_grammar_on = False  # the new recognizer starts with the course grammar off
                         idle_status()
                         continue
                 while True:
@@ -626,18 +708,20 @@ def _grammar(phrases: tuple[str, ...]) -> str:
 RECOGNIZER_KEY = "recognizer"  # "wsapi" (Windows speech, default) or "vosk"
 
 
-def _new_recognizer(model, phrases: tuple[str, ...]):
-    """Windows speech when chosen and it starts. Otherwise Vosk, so voice control still works."""
+def _new_recognizer(model, phrases: tuple[str, ...], groups: dict[str, tuple[str, ...]] | None = None):
+    """Windows speech when chosen and it starts. Otherwise Vosk, so voice control still works.
+    Groups are listened for only when switched on. Vosk cannot switch them, so it gets them all."""
     from app.prefs import get_pref
 
     if get_pref(RECOGNIZER_KEY, "wsapi") == "wsapi":
         try:
             from app.wsapi_recognizer import WsapiRecognizer
 
-            return WsapiRecognizer(phrases)
+            return WsapiRecognizer(phrases, groups)
         except Exception:
             log.exception("windows speech failed to start, using Vosk")
-    return KaldiRecognizer(model, SAMPLE_RATE, _grammar(phrases))
+    everything = tuple(phrases) + tuple(p for group in (groups or {}).values() for p in group)
+    return KaldiRecognizer(model, SAMPLE_RATE, _grammar(everything))
 
 
 def _close_recognizer(rec) -> None:

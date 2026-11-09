@@ -118,6 +118,33 @@ PREFS: list[PrefSpec] = [
         "",
         ("True", "False"),
     ),
+    PrefSpec(
+        "GSPro Settle Seconds",
+        "gspro_settle_seconds",
+        "Pause after a GSPro screen looks still, before the next click. Raise it on slower hardware",
+        "GSPRO",
+        "1.0",
+        "TEXT",
+        "FLOAT",
+    ),
+    PrefSpec(
+        "GSPro Short Settle Seconds",
+        "gspro_settle_short_seconds",
+        "Pause for screens that load quickly, such as round settings after Play",
+        "GSPRO",
+        "0.3",
+        "TEXT",
+        "FLOAT",
+    ),
+    PrefSpec(
+        "Marker Stop Lag Seconds",
+        "marker_stop_lag_seconds",
+        "How far back the marker rewinds when you say stop, to cover the delay before stop is heard. 0 turns it off",
+        "GSPRO",
+        "1.0",
+        "TEXT",
+        "FLOAT",
+    ),
 ]
 SPEC_BY_KEY = {spec.key: spec for spec in PREFS}
 BASELINE = SPEC_BY_KEY["baseline_room_db"]

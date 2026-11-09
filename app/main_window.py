@@ -2,7 +2,7 @@
 
 import logging
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QTimer
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
 )
 
 from app.bag_dialog import edit_bag
-from app.gspro_bag_dialog import edit_gspro_bag
 from app.listener import VoiceListener
 from app.mic_page import MicSetupPage
 from app.prefs_page import PrefsPage, saved_offset, send_keys_default
@@ -52,7 +51,6 @@ class MainWindow:
         self._level = _require(self.window, QProgressBar, "levelBar")
         self._mic = _require(self.window, QComboBox, "micCombo")
         self._edit_bag = _require(self.window, QPushButton, "editBagButton")
-        self._gspro_bag = _require(self.window, QPushButton, "gsproBagButton")
         self._change_player = _require(self.window, QPushButton, "changePlayerButton")
         self._mic_page = MicSetupPage(
             self._mic,
@@ -87,11 +85,14 @@ class MainWindow:
         self._send_keys.toggled.connect(self._on_send_keys)
         self.listener.send_keys = self._send_keys.isChecked()
         self._edit_bag.clicked.connect(self._on_edit_bag)
-        self._gspro_bag.clicked.connect(lambda: edit_gspro_bag(self.window))
         self._change_player.clicked.connect(self._on_change_player)
         self._mic.currentIndexChanged.connect(self._on_mic_changed)
         self._closer = _CloseFilter(self.listener, self.window)
         self.window.installEventFilter(self._closer)
+        # Status bar shows what a GSPro step is doing. The timer reads it, so no thread touches the bar.
+        self._working_timer = QTimer(self.window)
+        self._working_timer.timeout.connect(self._show_working)
+        self._working_timer.start(300)
         self.listener.start()
         log.info("loaded %s", ui_path)
 
@@ -177,6 +178,15 @@ class MainWindow:
 
     def _on_command(self, text: str) -> None:
         self._command.setText(f"Command: {text}")
+
+    def _show_working(self) -> None:
+        from app.progress import current
+
+        text = current()
+        if text:
+            self._notice.showMessage(f"Working: {text}")
+        elif self._notice.currentMessage().startswith("Working:"):
+            self._notice.clearMessage()  # leave a finished result message in place
 
     def _on_notice(self, text: str) -> None:
         if text:

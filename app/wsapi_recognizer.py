@@ -45,20 +45,19 @@ from System.Speech.Recognition import (  # noqa: E402
 class WsapiRecognizer:
     """Drop-in for the parts of KaldiRecognizer that listener.py uses."""
 
-    def __init__(self, phrases) -> None:
+    def __init__(self, phrases, groups: dict[str, tuple[str, ...]] | None = None) -> None:
+        """phrases is always listening. Each group is its own grammar, loaded now and turned on
+        or off with set_group(), so a screen can listen for its own words only."""
         self._queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._partial = ""
         self._current: str | None = None  # finished utterance waiting for Result()
-
-        fd, path = tempfile.mkstemp(prefix="gspraudio_", suffix=".srgs.xml")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(phrases_to_srgs(phrases))
-            self._engine = SpeechRecognitionEngine(CultureInfo("en-US"))
-            self._engine.LoadGrammar(Grammar(path))
-        finally:
-            os.remove(path)  # the grammar is read at LoadGrammar, so the file is no longer needed
+        self._engine = SpeechRecognitionEngine(CultureInfo("en-US"))
+        self._groups: dict[str, Grammar] = {}
+        self._load("main", phrases, enabled=True)
+        for name, group in (groups or {}).items():
+            if group:
+                self._load(name, group, enabled=False)
 
         self._engine.SetInputToDefaultAudioDevice()
         self._on_recognized = EventHandler[SpeechRecognizedEventArgs](self._recognized)
@@ -67,6 +66,26 @@ class WsapiRecognizer:
         self._engine.SpeechHypothesized += self._on_hypothesized
         self._engine.RecognizeAsync(RecognizeMode.Multiple)
         log.info("windows speech started: %s", self._engine.RecognizerInfo.Name)
+
+    def _load(self, name: str, phrases, enabled: bool) -> None:
+        fd, path = tempfile.mkstemp(prefix="gspraudio_", suffix=".srgs.xml")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(phrases_to_srgs(phrases))
+            grammar = Grammar(path)
+        finally:
+            os.remove(path)  # the grammar is read when it is loaded, so the file is no longer needed
+        grammar.Name = name
+        grammar.Enabled = enabled
+        self._engine.LoadGrammar(grammar)
+        self._groups[name] = grammar
+
+    def set_group(self, name: str, enabled: bool) -> None:
+        """Turn a grammar group on or off. Cheap: no reload."""
+        grammar = self._groups.get(name)
+        if grammar is not None:
+            grammar.Enabled = enabled
+            log.info("speech group %s %s", name, "on" if enabled else "off")
 
     # Windows speech thread
     def _recognized(self, sender, event) -> None:

@@ -5,9 +5,12 @@ phrase can never match. "hey caddie" / "hey caddy" are in the lexicon.
 Spoken phrases below are words that model does contain.
 """
 
+from app.gspro_tree import SYNC_PHRASES
+
 WAKE_PHRASES = ("hey caddie", "hey caddy")
-LAUNCH_PHRASE = "play golf"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
+LAUNCH_PHRASE = "please play golf"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
 DEBUG_PHRASE = "debug press"  # one test press per command, for click debugging; handled in listener.py
+COURSE_PHRASE = "play"  # "play <name>" types the name in GSPro's course search; handled in listener.py
 ARM_SECONDS = 5.0
 
 class Command:
@@ -51,8 +54,8 @@ ROWS: tuple[Command, ...] = (
     Command(("shot cam", "shot camera"), "j", "Shot camera", area="Aim"),
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
-    Command(("stop",), "", "Stop aim, zoom, tee, or flyover", area="Aim"),
-    Command(("play golf",), "", "Start GSPro if it is not running", area="Launch"),
+    Command(("stop",), "", "Stop aim, zoom, tee, flyover, or a moving marker", area="Aim"),
+    Command(("please play golf",), "", "Start GSPro if it is not running", area="Launch"),
     Command(("practice screen",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
     Command(
         ("gspro practice range screen", "gspro practice range"),
@@ -64,6 +67,18 @@ ROWS: tuple[Command, ...] = (
     Command(("end round",), "", "From the GSPro range, open the menu and end the round", area="Launch"),
     Command(("go back", "back screen"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),
     Command(("home screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
+    Command(("please exit golf",), "", "From the GSPro home screen, exit GSPro", area="Launch"),
+    Command(("on course practice",), "", "From the GSPro practice screen, open on course practice", area="Launch"),
+    Command(("additional ranges",), "", "From the GSPro practice screen, open additional ranges", area="Launch"),
+    Command(("play screen",), "", "From the GSPro home screen, press PLAY to open the course list", area="Launch"),
+    Command(("now",), "", "On round settings, press PLAY to start the course", area="Launch"),
+    Command(("show favorites",), "", "On course practice: show only your favorite courses", area="Launch"),
+    Command(("clear course",), "", "On course practice: clear the course search so the full list shows", area="Launch"),
+    Command(("stop listening",), "", "Pause voice commands. Only 'start listening' is heard until then", area="Voice"),
+    Command(("start listening",), "", "Resume voice commands", area="Voice"),
+    Command(("show installed",), "", "On course practice: show the whole installed list again", area="Launch"),
+    Command(("show menu",), "", "While playing: open the game menu (hamburger, upper right)", area="Launch"),
+    Command(("cancel menu",), "", "While playing: close the game menu", area="Launch"),
     Command(("debug press",), "", "Debug: one test press on the practice range card", area="Debug"),
     Command(("switch hand",), "n", "Switch hand", area="Aim", wired=False),
     Command(("club up",), "i", "Next club toward the putter", area="Club", heard=False),
@@ -72,7 +87,16 @@ ROWS: tuple[Command, ...] = (
     Command(("putter",), "u", "Jump to the putter", area="Club", heard=False),
     Command(("zoom in",), "q", "Zoom in", area="Map", repeat=True, hold=True),
     Command(("zoom out",), "w", "Zoom out", area="Map", repeat=True, hold=True),
-    Command(("expand map", "mini map"), "s", "Expand map", area="Map", closes=True),
+    Command(("expand map", "mini map", "shrink map"), "s", "Toggle the mini map (S): expand or shrink", area="Map", closes=True),
+    Command(("map mode start",), "", "On the course screen, hold the mouse button on the mini map center (distances show)", area="Map"),
+    Command(("map mode end",), "", "Let go of the mouse button and leave map mode", area="Map"),
+    Command(("free flight mode start", "flight mode start"), "", "On the course screen, turn on free flight (F5)", area="Map"),
+    Command(("free flight mode end", "flight mode end"), "", "Turn free flight off (F5 again)", area="Map"),
+    Command(("marker place",), "", "On the course screen, drop a marker at the center of the mini map, or where the moved marker is", area="Map"),
+    Command(("marker left",), "", "On the course screen, move the marker left until stop", area="Map"),
+    Command(("marker right",), "", "On the course screen, move the marker right until stop", area="Map"),
+    Command(("marker up",), "", "On the course screen, move the marker up until stop", area="Map"),
+    Command(("marker down",), "", "On the course screen, move the marker down until stop", area="Map"),
     Command(("flyover",), "o", "Flyover", area="View", closes=True, stops=True),
     Command(("heat map",), "y", "Heat map", area="View"),
     Command(("scorecard",), "t", "Scorecard", area="View", closes=True),
@@ -107,6 +131,13 @@ ROWS: tuple[Command, ...] = (
     Command(("console short",), "f8", "Short console", area="Visual / System", wired=False),
     Command(("console tall",), "f9", "Tall console", area="Visual / System", wired=False),
 )
+
+# "sync <screen>" rows: set the app's screen when it has drifted out of sync with GSPro.
+_SYNC_ROWS = tuple(
+    Command((phrase,), "", f"Tell the app GSPro is on the {SYNC_PHRASES[phrase]} screen (no clicks)", area="Launch")
+    for phrase in SYNC_PHRASES
+)
+ROWS = ROWS + _SYNC_ROWS
 
 _NUMBER_WORDS = (
     "one",
@@ -165,6 +196,22 @@ def spoken_text(text: str) -> str:
     return " ".join(part for part in text.split() if part != "[unk]").strip()
 
 
+def parse_course(text: str) -> tuple[str, bool]:
+    """The course name said after "play", and whether "now" was said at the end."""
+    cleaned = spoken_text(text)
+    index = cleaned.find(COURSE_PHRASE)
+    rest = cleaned[index + len(COURSE_PHRASE):].strip() if index >= 0 else ""
+    then_now = rest == "now" or rest.endswith(" now")
+    if then_now:
+        rest = rest[: -len("now")].strip()
+    return rest, then_now
+
+
+def course_name(text: str) -> str:
+    """The words said after "play", without a trailing "now"."""
+    return parse_course(text)[0]
+
+
 def contains_wake(text: str) -> bool:
     cleaned = spoken_text(text)
     return any(phrase in cleaned for phrase in WAKE_PHRASES)
@@ -173,9 +220,10 @@ def contains_wake(text: str) -> bool:
 def match_command(text: str) -> str | None:
     """Longest known phrase contained in a recognition result."""
     from app.bag import spoken_phrases
+    from app.gspro_courses import course_phrases
 
     cleaned = spoken_text(text)
-    found = [phrase for phrase in (*COMMANDS, *spoken_phrases()) if phrase in cleaned]
+    found = [phrase for phrase in (*COMMANDS, *spoken_phrases(), *course_phrases()) if phrase in cleaned]
     if not found:
         return None
     return max(found, key=len)

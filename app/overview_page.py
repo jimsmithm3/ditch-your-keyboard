@@ -12,7 +12,9 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from app import gspro_tree as tree
 from app.connector_ui import lights
+from app.gspro_sequences import CLOSED, current_screen
 from app.launch import _process_running
 
 log = logging.getLogger(__name__)
@@ -65,6 +67,22 @@ class OverviewPage(QWidget):
             layout.addLayout(row)
             self._dots[key] = dot
 
+        self._screen_title = QLabel("Screen: —")
+        self._screen_rows = QVBoxLayout()
+        layout.addSpacing(12)
+        layout.addWidget(self._screen_title)
+        layout.addLayout(self._screen_rows)
+
+        self._mode = QLabel("Voice: listening")
+        self._mode.setStyleSheet("font-size: 22px; font-weight: bold; color: #2e7d32;")
+        layout.addWidget(self._mode)
+        self._working = QLabel("")
+        self._working.setStyleSheet("font-size: 18px; color: #1565c0;")
+        layout.addWidget(self._working)
+        self._working_timer = QTimer(self)
+        self._working_timer.timeout.connect(self._show_working)
+        self._working_timer.start(300)
+
         self._last_command = QLabel("Last command: —")
         self._last_heard = QLabel("Last heard: —")
         self._checked = QLabel("")
@@ -83,6 +101,11 @@ class OverviewPage(QWidget):
     def attach(self, listener) -> None:
         listener.command.connect(self._on_command)
         listener.utterance.connect(self._on_heard)
+        listener.mode.connect(self._on_mode)
+
+    def _on_mode(self, on: bool) -> None:
+        self._mode.setText("Voice: listening" if on else "Voice: PAUSED. Say start listening.")
+        self._mode.setStyleSheet("font-size: 22px; font-weight: bold; color: " + ("#2e7d32;" if on else "#c62828;"))
 
     def _poll(self) -> None:
         if self._busy:
@@ -95,9 +118,45 @@ class OverviewPage(QWidget):
         for key, _ in self.CHECKS:
             self._dots[key].setStyleSheet(_dot(GREEN if status.get(key) else RED))
         self._checked.setText(f"Checked {status.get('checked', '?')}")
+        self._render_screen()
+
+    def _show_working(self) -> None:
+        from app.progress import current
+
+        text = current()
+        self._working.setText(f"Working: {text}" if text else "")
+
+    def _render_screen(self) -> None:
+        while self._screen_rows.count():
+            item = self._screen_rows.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        if current_screen() == CLOSED:
+            self._screen_title.setText("GSPro is not running. Say \"please play golf\".")
+            self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
+            return
+        current = tree.screen(current_screen())
+        if current is None:
+            self._screen_title.setText("Screen: unknown (say a command to set it)")
+            return
+        self._screen_title.setText(f"Screen (last known): {current.name}")
+        self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
+        for child in tree.children(current.key):
+            self._add_row(f"Say \"{child.phrase}\"", tree.status(child.sequences))
+        for action in current.actions:
+            if action.phrase:
+                self._add_row(f"Say \"{action.phrase}\"", tree.status(action.sequences), action.name)
+            else:
+                self._add_row(action.name, tree.status(action.sequences), "no voice command yet")
+
+    def _add_row(self, text: str, status: str, note: str = "") -> None:
+        label = QLabel(f"{text}   ·   {status}" + (f"   ({note})" if note else ""))
+        label.setStyleSheet("font-size: 20px; padding: 4px 0;")
+        self._screen_rows.addWidget(label)
 
     def _on_command(self, text: str) -> None:
         self._last_command.setText(f"Last command: {text}  ({datetime.now().strftime('%H:%M:%S')})")
+        self._render_screen()
 
     def _on_heard(self, text: str) -> None:
         self._last_heard.setText(f"Last heard: {text}")
