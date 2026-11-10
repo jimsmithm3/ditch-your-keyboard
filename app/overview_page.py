@@ -10,12 +10,13 @@ import threading
 from datetime import datetime
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app import gspro_tree as tree
 from app.connector_ui import lights
 from app.gspro_sequences import CLOSED, current_screen
 from app.launch import _process_running
+from app.screen_table_dialog import show_screen_table
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ class OverviewPage(QWidget):
         layout.addSpacing(12)
         layout.addWidget(self._screen_title)
         layout.addLayout(self._screen_rows)
+        commands_button = QPushButton("Commands...")  # opens the screen table window
+        commands_button.clicked.connect(lambda: show_screen_table(None))
+        layout.addWidget(commands_button)
 
         self._mode = QLabel("Voice: listening")
         self._mode.setStyleSheet("font-size: 22px; font-weight: bold; color: #2e7d32;")

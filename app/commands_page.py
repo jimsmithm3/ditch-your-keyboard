@@ -10,6 +10,7 @@ from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.commands import ROWS, Command, key_text
 from app.prefs import get_bool, set_bool
+from app.screen_table_dialog import show_screen_table
 
 _UNWIRED = QBrush(QColor(255, 214, 214))
 _COLUMNS = ("Area", "Keystroke", "Voice command", "Description", "Close", "Continue", "Tested")
@@ -67,6 +69,10 @@ def build_commands_page() -> QWidget:
     page = QWidget()
     page.setObjectName("commandsPage")
     layout = QVBoxLayout(page)
+
+    screen_button = QPushButton("Screen table...")
+    screen_button.clicked.connect(lambda: show_screen_table(page))
+    layout.addWidget(screen_button)
 
     summary = QLabel()
     layout.addWidget(summary)

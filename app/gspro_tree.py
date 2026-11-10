@@ -53,7 +53,7 @@ class Screen:
 PLAYERS = Action("Players")
 SETTINGS = Action("Settings")
 EXIT = Action("Exit", "please exit golf", ("please exit golf",))
-BACK = Action("Back", "go back", ("go back", "back screen"))
+BACK = Action("Back", "back screen", ("back screen",))
 CONFIRM = Block("Confirm dialog", shot="confirm_dialog.png")
 PLAY_COURSE = Action(
     "Play a course",
@@ -70,7 +70,7 @@ CANCEL_MENU = Action("Cancel menu", "cancel menu", ("cancel menu",))
 EXPAND_MAP = Action("Expand map", "expand map", (), shot="mini_map_expanded.png")  # keystroke S, not a click
 PLACE_MARKER = Action("Marker place", "marker place", ("marker place",))
 SHRINK_MAP = Action("Shrink map", "shrink map", ())  # keystroke S, not a click
-CHANGE_DISTANCE = Action("Change driving range distance", shot="driving_range_distance_dialog.png")
+CHANGE_DISTANCE = Action("Change driving range distance", "change driving range distance", ("change driving range distance",), shot="driving_range_distance_dialog.png")
 END_ROUND = Action(
     "Game menu: end round",
     sequences=("end round",),
@@ -104,10 +104,10 @@ SCREENS: tuple[Screen, ...] = (
     Screen("online", "Online match", "home", "online match"),
     Screen(
         "range",
-        "GSPro practice range",
+        "GSPro Range",
         "practice",
         "gspro practice range",
-        ("gspro practice range screen", "gspro practice range", "go to range"),
+        ("gspro practice range", "gspro practice range now"),
         actions=(CHANGE_DISTANCE, END_ROUND),
         shot="gspro_practice_range_screen.png",
     ),
@@ -116,31 +116,51 @@ SCREENS: tuple[Screen, ...] = (
         "On course practice",
         "practice",
         "on course practice",
-        ("on course practice",),
+        ("on course practice", "on course practice now"),
         actions=(PLAY_COURSE, CLEAR_COURSE, SHOW_FAVORITES, SHOW_INSTALLED, BACK, PLAYERS, SETTINGS),
         shot="on_course_practice.png",
     ),
     Screen(
         "additional",
-        "Additional ranges",
+        "Additional Driving Ranges",
         "practice",
         "additional ranges",
-        ("additional ranges",),
+        ("additional ranges", "additional ranges now"),
         actions=(BACK, PLAYERS, SETTINGS),
         shot="additional_driving_ranges_screen.png",
     ),
     Screen(
         "driving_range",
-        "Driving range",
+        "Additional Range",
         "additional",
         "play <range name>",
         actions=(SHOW_MENU, CANCEL_MENU, END_ROUND),
         shot="driving_range_screen.png",
     ),
+    # Round settings is split by how it is reached: from On course practice (practice), or from
+    # Local match (play). The screen is the same; the split keeps each path's sync and memory apart.
     Screen(
-        "round_settings",
-        "Round settings",
+        "round_settings_practice",
+        "Round Settings - Practice",
         "on_course",
+        "play <name>",
+        ("play course",),
+        actions=(PLAY_NOW, BACK, PLAYERS, SETTINGS),
+        shot="round_settings_screen.png",
+    ),
+    Screen(
+        "course_practice",
+        "Course Practice",
+        "round_settings_practice",
+        "now",
+        ("now",),
+        actions=(EXPAND_MAP, SHRINK_MAP, PLACE_MARKER, SHOW_MENU, CANCEL_MENU, END_ROUND),
+        shot="training_screen.png",
+    ),
+    Screen(
+        "round_settings_play",
+        "Round Settings - Play",
+        "local_match",
         "play <name>",
         ("play course",),
         actions=(PLAY_NOW, BACK, PLAYERS, SETTINGS),
@@ -149,7 +169,7 @@ SCREENS: tuple[Screen, ...] = (
     Screen(
         "play",
         "Course play",
-        "round_settings",
+        "round_settings_play",
         "now",
         ("now",),
         actions=(EXPAND_MAP, SHRINK_MAP, PLACE_MARKER, SHOW_MENU, CANCEL_MENU, END_ROUND),
@@ -159,18 +179,20 @@ SCREENS: tuple[Screen, ...] = (
 
 _BY_KEY = {screen.key: screen for screen in SCREENS}
 
-# "sync <screen>" tells the app which screen GSPro is on, when it has drifted out of sync.
+# "sync to <screen>" tells the app which screen GSPro is on, when it has drifted out of sync.
 # It clicks nothing. The phrase maps to a screen key.
 SYNC_PHRASES: dict[str, str] = {
-    "sync home screen": "home",
-    "sync practice screen": "practice",
-    "sync gspro practice range": "range",
-    "sync on course practice": "on_course",
-    "sync additional ranges": "additional",
-    "sync local match": "local_match",
-    "sync driving range": "driving_range",
-    "sync round settings": "round_settings",
-    "sync course play": "play",
+    "sync to home screen": "home",
+    "sync to practice screen": "practice",
+    "sync to gspro practice range screen": "range",
+    "sync to on course practice screen": "on_course",
+    "sync to additional ranges screen": "additional",
+    "sync to local match screen": "local_match",
+    "sync to driving range screen": "driving_range",
+    "sync to round settings practice screen": "round_settings_practice",
+    "sync to course practice screen": "course_practice",
+    "sync to round settings play screen": "round_settings_play",
+    "sync to course play screen": "play",
 }
 
 

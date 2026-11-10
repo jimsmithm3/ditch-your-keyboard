@@ -54,24 +54,69 @@ ROWS: tuple[Command, ...] = (
     Command(("shot cam", "shot camera"), "j", "Shot camera", area="Aim"),
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
-    Command(("stop",), "", "Stop aim, zoom, tee, flyover, or a moving marker", area="Aim"),
+    Command(("stop",), "", "Stop aim, zoom, tee, flyover, a moving marker, or a slider being dragged", area="Aim"),
     Command(("please play golf",), "", "Start GSPro if it is not running", area="Launch"),
     Command(("practice screen",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
     Command(
-        ("gspro practice range screen", "gspro practice range"),
+        ("gspro practice range", "gspro practice range screen", "gspro range"),
         "",
         "From the GSPro practice screen, open the range",
         area="Launch",
     ),
-    Command(("go to range",), "", "From the GSPro home screen, open the range", area="Launch"),
+    Command(
+        ("gspro practice range now", "practice range now", "gspro range now"),
+        "",
+        "From the GSPro home screen, go straight to the range (skips the practice screen)",
+        area="Launch",
+    ),
+    Command(
+        ("on course practice now", "course practice now"),
+        "",
+        "From the GSPro home screen, go straight to on course practice (skips the practice screen)",
+        area="Launch",
+    ),
+    Command(
+        ("additional ranges now",),
+        "",
+        "From the GSPro home screen, go straight to additional ranges (skips the practice screen)",
+        area="Launch",
+    ),
     Command(("end round",), "", "From the GSPro range, open the menu and end the round", area="Launch"),
-    Command(("go back", "back screen"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),
+    Command(("back screen", "go back"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),  # primary, then aliases
     Command(("home screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
-    Command(("please exit golf",), "", "From the GSPro home screen, exit GSPro", area="Launch"),
+    Command(("please exit golf", "please stop gspro"), "", "Close GSpro and connectors (home screen; then say confirm exit)", area="Launch"),
+    Command(("confirm exit",), "", "Confirm closing GSpro, within 8 seconds of please exit golf", area="Launch"),
     Command(("on course practice",), "", "From the GSPro practice screen, open on course practice", area="Launch"),
     Command(("additional ranges",), "", "From the GSPro practice screen, open additional ranges", area="Launch"),
     Command(("play screen",), "", "From the GSPro home screen, press PLAY to open the course list", area="Launch"),
     Command(("now",), "", "On round settings, press PLAY to start the course", area="Launch"),
+    Command(("open preferences",), "", "On the practice range, open the driving range panel (chevron)", area="Range"),
+    Command(("change driving range distance", "change range distance"), "", "On the practice range, click the pencil on Driving Range Distance, then say the digits", area="Range"),
+    Command(("done",), "", "In the driving range panel, press Enter in the distance box (keeps the typed number)", area="Range"),
+    Command(("apply",), "", "In the driving range panel, click APPLY (closes the panel)", area="Range"),
+    Command(("change max distance", "change max"), "", "In the driving range panel, press the Max Distance slider's left end and drag right until stop", area="Range"),
+    Command(("change min distance", "change min"), "", "In the driving range panel, press the Min Distance slider's left end and drag right until stop", area="Range"),
+    Command(("change shots per one",), "", "In the driving range panel, click the 1 box under Shots Per", area="Range"),
+    Command(("change shots per three",), "", "In the driving range panel, click the 3 box under Shots Per", area="Range"),
+    Command(("change shots per five",), "", "In the driving range panel, click the 5 box under Shots Per", area="Range"),
+    Command(("change shots per ten",), "", "In the driving range panel, click the 10 box under Shots Per", area="Range"),
+    Command(("change shots per fifteen",), "", "In the driving range panel, click the 15 box under Shots Per", area="Range"),
+    Command(("slide left",), "", "In the driving range panel, press where the pointer is and slide left at a third of the slider speed until stop", area="Range"),
+    Command(("slide right",), "", "In the driving range panel, press where the pointer is and slide right at a third of the slider speed until stop", area="Range"),
+    Command(("close preferences",), "", "In the driving range panel, click the chevron to close it", area="Range"),
+    Command(("randomizer on",), "", "In the driving range panel, click the randomizer arrows (a click toggles; the app cannot read the state)", area="Range"),
+    Command(("randomizer off",), "", "In the driving range panel, click the randomizer arrows (a click toggles; the app cannot read the state)", area="Range"),
+    # One row for the ten digit words. Each word types its own digit (DIGIT_KEYS below).
+    Command(
+        ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"),
+        "",
+        "Say each number you want out loud; each one is typed in the distance box",
+        area="Range",
+    ),
+    Command(("players tab",), "", "On round settings, switch to the Players tab", area="Launch"),
+    Command(("match tab",), "", "On round settings, switch to the Match tab", area="Launch"),
+    Command(("holes tab",), "", "On round settings, switch to the Holes tab", area="Launch"),
+    Command(("play course",), "", "On round settings, press PLAY for the course that is set up", area="Launch"),
     Command(("show favorites",), "", "On course practice: show only your favorite courses", area="Launch"),
     Command(("clear course",), "", "On course practice: clear the course search so the full list shows", area="Launch"),
     Command(("stop listening",), "", "Pause voice commands. Only 'start listening' is heard until then", area="Voice"),
@@ -132,9 +177,18 @@ ROWS: tuple[Command, ...] = (
     Command(("console tall",), "f9", "Tall console", area="Visual / System", wired=False),
 )
 
-# "sync <screen>" rows: set the app's screen when it has drifted out of sync with GSPro.
+# "sync to <screen>" rows: set the app's screen when it has drifted out of sync with GSPro.
+# Each sync phrase has a secondary without the word "screen" at the end, and some have extra secondaries.
+_EXTRA_SYNC_ALIASES: dict[str, tuple[str, ...]] = {
+    "sync to gspro practice range screen": ("sync to practice range", "sync to gspro range"),
+}
 _SYNC_ROWS = tuple(
-    Command((phrase,), "", f"Tell the app GSPro is on the {SYNC_PHRASES[phrase]} screen (no clicks)", area="Launch")
+    Command(
+        (phrase, phrase.removesuffix(" screen"), *_EXTRA_SYNC_ALIASES.get(phrase, ())),
+        "",
+        f"Tell the app GSPro is on the {SYNC_PHRASES[phrase]} screen (no clicks)",
+        area="Launch",
+    )
     for phrase in SYNC_PHRASES
 )
 ROWS = ROWS + _SYNC_ROWS
@@ -167,6 +221,39 @@ def _heard_phrases(row: Command) -> tuple[str, ...]:
 COMMANDS: dict[str, str | tuple[str, ...]] = {
     phrase: row.keys for row in ROWS if row.wired and row.heard for phrase in _heard_phrases(row)
 }
+
+# Each digit word types its digit. They share one row, but each word is its own command, so the
+# digit words are not aliases of each other.
+DIGIT_KEYS: dict[str, str] = {
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+}
+COMMANDS.update(DIGIT_KEYS)
+
+# A command row lists its primary phrase first, then aliases. Aliases exist only so the speech
+# grammar hears them; everything else (sequences, tables, status) uses the primary.
+_PRIMARY: dict[str, str] = {
+    phrase: row.phrases[0] for row in ROWS if row.phrases[0] not in DIGIT_KEYS for phrase in row.phrases
+}
+_ALIASES: dict[str, tuple[str, ...]] = {row.phrases[0]: row.phrases[1:] for row in ROWS if row.phrases[0] not in DIGIT_KEYS}
+
+
+def primary(phrase: str) -> str:
+    """The primary phrase for any phrase. An alias gives the primary of its row."""
+    return _PRIMARY.get(phrase, phrase)
+
+
+def aliases_of(primary_phrase: str) -> tuple[str, ...]:
+    """The alias phrases of a primary. For grammar matching only."""
+    return _ALIASES.get(primary_phrase, ())
 
 CLOSABLE: dict[str, str | tuple[str, ...]] = {
     phrase: row.keys for row in ROWS if row.wired and row.closes for phrase in row.phrases
@@ -218,7 +305,7 @@ def contains_wake(text: str) -> bool:
 
 
 def match_command(text: str) -> str | None:
-    """Longest known phrase contained in a recognition result."""
+    """Longest known phrase contained in a recognition result, as its primary phrase."""
     from app.bag import spoken_phrases
     from app.gspro_courses import course_phrases
 
@@ -226,7 +313,7 @@ def match_command(text: str) -> str | None:
     found = [phrase for phrase in (*COMMANDS, *spoken_phrases(), *course_phrases()) if phrase in cleaned]
     if not found:
         return None
-    return max(found, key=len)
+    return primary(max(found, key=len))
 
 
 def voice_text(command: Command) -> str:

@@ -145,6 +145,25 @@ PREFS: list[PrefSpec] = [
         "TEXT",
         "FLOAT",
     ),
+    PrefSpec(
+        "Slider Stop Lag Seconds",
+        "slider_stop_lag_seconds",
+        "How far back a range panel slider rewinds when you say stop, to cover the delay before stop is heard. 0 turns it off",
+        "GSPRO",
+        "1.0",
+        "TEXT",
+        "FLOAT",
+    ),
+    PrefSpec(
+        "Allow Voice Exit",
+        "allow_exit_golf",
+        "On: \"please exit golf\" (home screen) then \"confirm exit\" closes GSPro by voice. Off by default. Takes effect after a restart",
+        "GSPRO",
+        "False",
+        "DROPDOWN",
+        "",
+        ("True", "False"),
+    ),
 ]
 SPEC_BY_KEY = {spec.key: spec for spec in PREFS}
 BASELINE = SPEC_BY_KEY["baseline_room_db"]
