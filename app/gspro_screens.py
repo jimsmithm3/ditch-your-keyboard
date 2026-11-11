@@ -37,13 +37,14 @@ class Screen:
 # Property and capability groups: the phrases each group holds. A screen has a group when
 # it lists the group's name in its groups.
 GROUPS: dict[str, tuple[str, ...]] = {
+    "Ball": ("place ball",),  # course practice and course play: the ball icon, then a grid point
     "Exit": ("please exit golf", "confirm exit"),  # home screen only; exit takes two steps so it is not an accident
     "Back": ("back screen",),
     "Range": ("open preferences", "close preferences"),  # practice range: the driving range panel (see PANELS); close is here too, so it is heard after the panel memory drifts
     "Tabs": ("players tab", "match tab", "holes tab"),  # round settings: the three tabs along the top
     "Menu": ("show menu", "cancel menu", "end round"),
     "Course list": ("show favorites", "show installed", "clear course"),
-    "Club": ("club up", "club down", "reset club", "putter"),
+    "Club": ("club up", "club down", "putter"),
     "Aim": (
         "aim left",
         "aim right",
@@ -83,20 +84,63 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "green grid",
         "pin indicator",
         "range finder",
-        "move left",
-        "move right",
+        "look left",
+        "look right",
         "hide ui",
         "show ui",
         "clear tracer",
     ),
 }
 
+# The numbered grid. Its own grammar, on only while the grid is showing: the digit words pick cells.
+GRID_GROUP = "grid"
+# The grid's cells are spoken with the NATO alphabet: distinct words that are less often misheard than
+# digits. Each cell is labelled with the first letter of its word, A to J. "golf" is a risk: it is close
+# to "please start gspro", which always listens. The first word is cell 0 on the grid, and so on.
+GRID_WORDS: tuple[str, ...] = (
+    "alpha",
+    "bravo",
+    "charlie",
+    "delta",
+    "echo",
+    "foxtrot",
+    "golf",
+    "hotel",
+    "india",
+    "juliett",
+    "kilo",
+    "lima",
+    "mike",
+    "november",
+    "oscar",
+    "papa",
+    "quebec",
+    "romeo",
+    "sierra",
+    "tango",
+    "uniform",
+    "victor",
+    "whiskey",
+    "xray",
+    "yankee",
+    "zulu",
+)
+GRID_INDEX: dict[str, int] = {word: index for index, word in enumerate(GRID_WORDS)}
+GRID_PHRASES: tuple[str, ...] = (*GRID_WORDS, "hide grid", "cancel grid")
+
+# The commands dialog's tab phrases. Their own grammar, on only while the dialog is open (see the listener).
+DIALOG_GROUP = "dialog"
+DIALOG_PHRASES: tuple[str, ...] = ("show current grammar", "show always on")
+
 # Always listening, on every screen. This is the way out when the screen memory is wrong.
 GLOBAL: tuple[str, ...] = (
     "stop listening",
     "start listening",
-    "please play golf",
-    "home screen",
+    "please start gspro",
+    "start screen",
+    "open commands",
+    "close commands",
+    "show grid",
     *SYNC_PHRASES,
 )
 
@@ -170,7 +214,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         ),
         groups=("Back", "Tabs"),
     ),
-    Screen("course_practice", "Course Practice", "round_settings_practice", groups=("Menu", "Club", "Aim", "Map", "View")),
+    Screen("course_practice", "Course Practice", "round_settings_practice", groups=("Menu", "Club", "Aim", "Map", "View", "Ball")),
     Screen(
         "round_settings_play",
         "Round Settings - Play",
@@ -181,7 +225,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         ),
         groups=("Back", "Tabs"),
     ),
-    Screen("play", "Course play", "round_settings_play", groups=("Menu", "Club", "Aim", "Map", "View"), note="hit balls"),
+    Screen("play", "Course play", "round_settings_play", groups=("Menu", "Club", "Aim", "Map", "View", "Ball"), note="hit balls"),
 )
 
 RECORDS_BY_KEY = {screen.key: screen for screen in SCREEN_RECORDS}
@@ -269,6 +313,30 @@ def recognizer_setup(spoken: tuple[str, ...] = ()) -> tuple[tuple[str, ...], dic
     panel_grammars = {panel_group(key): with_aliases(phrases) for key, phrases in PANELS.items()}
     always = with_aliases(GLOBAL)  # only GLOBAL; a command listens where a screen or panel claims it
     return always, {**screen_grammars, **panel_grammars}
+
+
+def grammar_name(group: str) -> str:
+    """A readable name for a grammar group, for the debug list."""
+    if group.startswith("screen:"):
+        record = RECORDS_BY_KEY.get(group[len("screen:"):])
+        return f"Screen: {record.name}" if record else group
+    if group.startswith("panel:"):
+        key = group[len("panel:"):]
+        return f"Panel: {PANEL_NAMES.get(key, key)}"
+    names = {"courses": "Course names", GRID_GROUP: "Grid", DIALOG_GROUP: "Commands dialog"}
+    return names.get(group, group)
+
+
+_active_groups: set[str] = set()  # the grammar groups listening right now; the listener keeps this up to date
+
+
+def set_active_groups(groups) -> None:
+    _active_groups.clear()
+    _active_groups.update(groups)
+
+
+def active_groups() -> list[str]:
+    return sorted(_active_groups)
 
 
 def check() -> list[str]:

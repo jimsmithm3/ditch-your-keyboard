@@ -5,19 +5,35 @@ first phrase, so the list of what still needs testing survives restarts.
 Click a Tested cell to toggle Yes / No.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
     QTableWidget,
+    QTabWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from app.commands import ROWS, Command, key_text
+from app.bag import spoken_phrases
+from app.commands import ROWS, Command, key_text, primary
+from app.gspro_screens import (
+    DIALOG_GROUP,
+    DIALOG_PHRASES,
+    GLOBAL,
+    GRID_GROUP,
+    active_groups,
+    GRID_PHRASES,
+    PANELS,
+    SCREEN_RECORDS,
+    grammar_name,
+    panel_group,
+    screen_group,
+    screen_phrases,
+)
 from app.prefs import get_bool, set_bool
 from app.screen_table_dialog import show_screen_table
 
@@ -46,8 +62,7 @@ _SHARED = _shared_strokes()
 
 def _test_key(command: Command) -> str:
     """Keystroke is the identity. Add the voice phrase when there is no keystroke
-    (stop, close) or the keystroke is shared (k for club down and reset club,
-    left/right for aim and range finder)."""
+    (stop, close) or the keystroke is shared (left/right for aim and range finder)."""
     stroke = _stroke(command)
     if not stroke:
         return "tested.phrase:" + command.phrases[0]
@@ -152,4 +167,72 @@ def build_commands_page() -> QWidget:
     table.resizeRowsToContents()
     refresh_summary()
     layout.addWidget(table)
+    tabs = QTabWidget()
+    tabs.addTab(page, "Commands")
+    tabs.addTab(build_active_page(), "Active commands")
+    return tabs
+
+
+def _primaries(phrases) -> list[str]:
+    """Each command once, by its primary name (aliases left out)."""
+    names: list[str] = []
+    for phrase in phrases:
+        if primary(phrase) == phrase and phrase not in names:
+            names.append(phrase)
+    return names
+
+
+def _group_column(group: str, spoken) -> tuple[str, list[str]]:
+    """One listening grammar: its readable name, then its commands by primary name."""
+    if group.startswith("screen:"):
+        return grammar_name(group), _primaries(screen_phrases(group[len("screen:"):], spoken))
+    if group.startswith("panel:"):
+        return grammar_name(group), _primaries(PANELS.get(group[len("panel:"):], ()))
+    if group == GRID_GROUP:
+        return grammar_name(group), _primaries(GRID_PHRASES)
+    if group == DIALOG_GROUP:
+        return grammar_name(group), _primaries(DIALOG_PHRASES)
+    return grammar_name(group), []  # course names: they come from the course list at run time
+
+
+def _active_columns() -> list[tuple[str, list[str]]]:
+    """Always on, then each grammar listening right now. Only the active ones are shown."""
+    spoken = tuple(spoken_phrases())
+    columns: list[tuple[str, list[str]]] = [("Always on", _primaries(GLOBAL))]
+    for group in active_groups():
+        columns.append(_group_column(group, spoken))
+    return columns
+
+
+def build_active_page() -> QWidget:
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    table = QTableWidget(0, 0)
+    table.setWordWrap(True)
+    table.verticalHeader().setVisible(False)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+    layout.addWidget(table)
+    shown: list = [None]
+
+    def refresh() -> None:
+        columns = _active_columns()
+        signature = tuple((name, tuple(phrases)) for name, phrases in columns)
+        if signature == shown[0]:
+            return  # nothing changed: leave the table alone
+        shown[0] = signature
+        table.clear()
+        table.setRowCount(max((len(phrases) for _, phrases in columns), default=0))
+        table.setColumnCount(len(columns))
+        table.setHorizontalHeaderLabels([name for name, _ in columns])
+        for col, (_name, phrases) in enumerate(columns):
+            for row, phrase in enumerate(phrases):
+                table.setItem(row, col, QTableWidgetItem(phrase))
+        table.resizeColumnsToContents()
+        table.resizeRowsToContents()
+
+    refresh()
+    timer = QTimer(page)  # follows the grammars while the tab is open
+    timer.timeout.connect(refresh)
+    timer.start(500)
     return page

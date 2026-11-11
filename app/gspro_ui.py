@@ -53,8 +53,10 @@ ROUND_TAB_HOLES = (0.623, 0.129)
 # Practice range: the driving range panel (open with the chevron, edit distance with the pencil)
 PREFERENCES_CHEVRON = (0.313, 0.052)  # the chevron at the top right of the panel (moved up and right from the first try)
 DISTANCE_PENCIL = (0.268, 0.289)  # the pencil on the Driving Range Distance box
+DISTANCE_FIRST_DIGIT = (0.244, 0.296)  # first digit of the Driving Range Distance value; a click here highlights the value (number box pattern)
 APPLY_BUTTON = (0.276, 0.496)  # APPLY at the bottom of the panel
 RANDOMIZER_ICON = (0.113, 0.341)  # the two arrows next to Randomizer On/Off
+BALL_ICON = (0.0685, 0.0561)  # the dimpled ball in the top left toolbar (ball placement mode); read from the course practice screenshot
 # Shots Per boxes, on the same row as Randomizer On/Off (x read from the screenshot at 1999 wide)
 SHOTS_1 = (0.1886, 0.3407)
 SHOTS_3 = (0.2066, 0.3407)

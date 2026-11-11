@@ -77,6 +77,9 @@ class MainWindow:
         self.listener.heard.connect(self._on_heard)
         self.listener.command.connect(self._on_command)
         self.listener.notice.connect(self._on_notice)
+        self.listener.available.connect(self._on_available)
+        self.listener.grid.connect(self._on_grid)
+        self.listener.grammars.connect(self._on_grammars)
         self.listener.club.connect(self._on_club)
         self._on_club(self.listener.bag.club)
         self.listener.mics.connect(self._on_mics)
@@ -169,11 +172,17 @@ class MainWindow:
         log.info("send keys %s", checked)
 
     def _on_status(self, text: str) -> None:
+        from app.gspro_overlay import set_status
+
+        set_status(text)
         self._status.setText(text)
         waiting = text in ("Listening for a command", 'Say "hey caddy stop"')
         self.window.setStyleSheet(_WAITING if waiting else "")
 
     def _on_heard(self, text: str) -> None:
+        from app.gspro_overlay import set_heard
+
+        set_heard(text)
         self._heard.setText(f"Heard: {text}")
 
     def _on_command(self, text: str) -> None:
@@ -187,6 +196,21 @@ class MainWindow:
             self._notice.showMessage(f"Working: {text}")
         elif self._notice.currentMessage().startswith("Working:"):
             self._notice.clearMessage()  # leave a finished result message in place
+
+    def _on_grammars(self, names: object) -> None:
+        from app.gspro_overlay import set_grammars
+
+        set_grammars(list(names))
+
+    def _on_grid(self, event: object) -> None:
+        from app.gspro_grid import handle
+
+        handle(event)
+
+    def _on_available(self, action: str) -> None:
+        from app.available_dialog import show_available
+
+        show_available(action)
 
     def _on_notice(self, text: str) -> None:
         if text:

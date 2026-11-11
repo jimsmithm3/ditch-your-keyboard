@@ -22,6 +22,11 @@ from app.gspro_screens import (
     RECORDS_BY_KEY,
     SCREEN_GROUP_NAMES,
     panel_group,
+    DIALOG_GROUP,
+    DIALOG_PHRASES,
+    GRID_GROUP,
+    GRID_INDEX,
+    GRID_PHRASES,
     recognizer_setup,
     screen_group,
 )
@@ -57,6 +62,7 @@ from app.gspro_sequences import (
     slider_start,
     stop_motion,
 )
+from app.gspro_grid import is_showing as grid_showing
 from app.launch import start_play_golf
 from app.commands import (
     CLOSABLE,
@@ -151,6 +157,9 @@ class VoiceListener(QObject):
     command = Signal(str)
     notice = Signal(str)
     mode = Signal(bool)  # True when listening, False after "stop listening"
+    available = Signal(str)  # the commands dialog: "open", "close", "current" (tab), or "always" (tab)
+    grid = Signal(object)  # the numbered grid: ("show", None), ("close", None), or ("pick", digit)
+    grammars = Signal(object)  # the grammars listening right now, as a list of readable names (debug box)
     club = Signal(str)
     mics = Signal(object)
     transcript = Signal(str, float, float)  # text, average dB, peak dB of the voiced audio (nan if none)
@@ -163,6 +172,8 @@ class VoiceListener(QObject):
         self.listening = True  # False after "stop listening": only "start listening" is heard
         self._course_grammar_on = False  # the course-name grammar is listened for only on On course practice
         self._screen_groups_on: set[str] = set()  # the per-screen grammars switched on right now
+        self._dialog_open = False  # the commands dialog is up, so its tab phrases listen
+        self._grid_on = False  # the numbered grid is up, so its digit words listen
         # Added to dBFS to get real-scale dB (see calibrate()).
         self.spl_offset = spl_offset
         self._recent: deque = deque(maxlen=2000)  # (time, dBFS) of recent blocks
@@ -202,6 +213,18 @@ class VoiceListener(QObject):
         self._course_grammar_on = want
         if hasattr(rec, "set_group"):  # Vosk has no groups; it listens for all words at once
             rec.set_group("courses", want)
+        self._emit_grammars()
+
+    def _emit_grammars(self) -> None:
+        """Tell the debug box which grammars are listening, by readable name."""
+        from app.gspro_screens import grammar_name, set_active_groups
+
+        groups = set(self._screen_groups_on)
+        if self._course_grammar_on:
+            groups.add("courses")
+        set_active_groups(groups)
+        names = ["Always on (global)"] + sorted(grammar_name(group) for group in groups)
+        self.grammars.emit(names)
 
     def _sync_screen_grammar(self, rec) -> None:
         """Listen for a screen's own phrases only while GSPro is on that screen. If the screen is
@@ -218,6 +241,10 @@ class VoiceListener(QObject):
             wanted = {screen_group(screen)}
         else:
             wanted = set()
+        if self._dialog_open:
+            wanted = wanted | {DIALOG_GROUP}  # the commands dialog's tab phrases, while it is open
+        if self._grid_on and grid_showing():
+            wanted = {GRID_GROUP}  # while the grid is showing, only its digit words listen, so club words cannot compete
         if wanted == self._screen_groups_on:
             return
         every_group = set(SCREEN_GROUP_NAMES) | set(PANEL_GROUP_NAMES)
@@ -225,6 +252,7 @@ class VoiceListener(QObject):
             if (name in wanted) != (name in self._screen_groups_on):
                 rec.set_group(name, name in wanted)
         self._screen_groups_on = wanted
+        self._emit_grammars()
 
     def use_page(self, title: str) -> None:
         self._commands.put(("page", title))
@@ -392,6 +420,10 @@ class VoiceListener(QObject):
                 if phrase and (not wake_required or contains_wake(text) or armed_until):
                     armed_until = 0.0
                     note = ""
+                    if self._grid_on and phrase not in GRID_PHRASES and phrase != "hide grid":
+                        # Any other command ends the grid, so the screen's own grammar can come back.
+                        self._grid_on = False
+                        self.grid.emit(("close", None))
                     if phrase not in ("close", "stop") and not is_continue(phrase) and not holds_key(phrase):
                         release()
                     if phrase == "stop" and not motion_active():
@@ -436,6 +468,46 @@ class VoiceListener(QObject):
                             note = flight_mode_end()
                         else:
                             note = marker_move(phrase)
+                    elif phrase == "place ball":
+                        move = None
+                        sent = False
+                        label = "ball"
+                        self._grid_on = True  # the grid's words listen while it is up
+                        self.grid.emit(("place", None))
+                        note = "Place ball: click the ball, then pick the point"
+                    elif phrase in ("show grid", "hide grid"):
+                        move = None
+                        sent = False
+                        label = "grid"
+                        self._grid_on = phrase == "show grid"
+                        self.grid.emit(("show" if self._grid_on else "close", None))
+                        note = "Grid on" if self._grid_on else "Grid closed"
+                    elif phrase == "cancel grid":
+                        move = None
+                        sent = False
+                        label = "grid"
+                        self._grid_on = False
+                        self.grid.emit(("cancel", None))
+                        note = "Grid cancelled"
+                    elif self._grid_on and phrase in GRID_PHRASES:
+                        move = None
+                        sent = False
+                        label = "grid"
+                        self.grid.emit(("pick", GRID_INDEX[phrase]))
+                        note = f"Grid: {phrase}"
+                    elif phrase in ("open commands", "close commands"):
+                        move = None
+                        sent = False
+                        label = "dialog"
+                        self._dialog_open = phrase == "open commands"
+                        self.available.emit("open" if self._dialog_open else "close")
+                        note = "Showing the commands" if self._dialog_open else "Commands closed"
+                    elif phrase in DIALOG_PHRASES:
+                        move = None
+                        sent = False
+                        label = "dialog"
+                        self.available.emit("current" if phrase == "show current grammar" else "always")
+                        note = "Showing " + ("the current grammar" if phrase == "show current grammar" else "the always-on commands")
                     elif phrase == "close":
                         move = None
                         release()
@@ -457,7 +529,7 @@ class VoiceListener(QObject):
                         move = None
                         sent = False  # no keys are sent; the note says what happened
                         release()
-                        label = "please play golf"
+                        label = "please start gspro"
                         note = start_play_golf(on_done=self.notice.emit)
                     elif phrase == "play course":
                         # On round settings, the course is already set up: press its PLAY. No name is needed.
@@ -487,7 +559,7 @@ class VoiceListener(QObject):
                         release()
                         label = phrase
                         if phrase == "please exit golf":
-                            note = request_exit()
+                            note = request_exit(on_done=self.notice.emit)
                         else:
                             note = confirm_exit(on_done=self.notice.emit)
                     elif phrase in SEQUENCES:
@@ -505,7 +577,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_START_PHRASES or phrase in FLIGHT_END_PHRASES or phrase in SLIDER_PHRASES:
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_START_PHRASES or phrase in FLIGHT_END_PHRASES or phrase in SLIDER_PHRASES or phrase in ("open commands", "close commands") or phrase in DIALOG_PHRASES or phrase in ("show grid", "hide grid", "place ball") or (self._grid_on and phrase in GRID_PHRASES):
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)
@@ -771,7 +843,7 @@ def _grammar(phrases: tuple[str, ...]) -> str:
 RECOGNIZER_KEY = "recognizer"  # "wsapi" (Windows speech, default) or "vosk"
 
 
-EXIT_PHRASES = ("please exit golf", "please stop gspro", "confirm exit")  # closing GSPro by voice; off unless the preference is on
+EXIT_PHRASES = ("confirm exit",)  # the second step; only heard when the Confirm Exit preference is on
 
 
 def _build_recognizer(model):
@@ -779,10 +851,10 @@ def _build_recognizer(model):
     from app.prefs import get_pref
 
     always, screen_grammars = recognizer_setup(tuple(spoken_phrases()))
-    if get_pref("allow_exit_golf", "False") != "True":
+    if get_pref("confirm_exit", "False") != "True":
         always = tuple(p for p in always if p not in EXIT_PHRASES)
         screen_grammars = {key: tuple(p for p in phrases if p not in EXIT_PHRASES) for key, phrases in screen_grammars.items()}
-    groups = {"courses": course_phrases(), **screen_grammars}
+    groups = {"courses": course_phrases(), DIALOG_GROUP: DIALOG_PHRASES, GRID_GROUP: GRID_PHRASES, **screen_grammars}
     return _new_recognizer(model, WAKE_PHRASES + always, groups)
 
 

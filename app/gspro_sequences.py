@@ -46,6 +46,7 @@ from app.gspro_ui import (
     ROUND_TAB_HOLES,
     APPLY_BUTTON,
     DISTANCE_PENCIL,
+    DISTANCE_FIRST_DIGIT,
     RANDOMIZER_ICON,
     SHOTS_1,
     SHOTS_3,
@@ -71,7 +72,7 @@ from app.gspro_ui import (
 log = logging.getLogger(__name__)
 
 TYPE_GAP_SECONDS = 0.02  # between typed characters in the course search
-PLAY_CHANGE_SECONDS = 4.0  # how long to look for the list to change after Play
+PLAY_CHANGE_SECONDS = 0.5  # how long to look for the list to change after Play; the list normally does not change here, so this is mostly waited out
 FILTER_SETTLE_SECONDS = 0.2  # after typing, before Play; the course list filters almost at once
 COMMAND_WAIT_SECONDS = 30.0  # a command waits this long for a running sequence to finish, instead of being dropped
 WATCH_GRID = 8
@@ -90,7 +91,7 @@ SCREEN_AFTER: dict[str, str] = {
     "on course practice now": "on_course",
     "additional ranges now": "additional",
     "gspro practice range": "range",
-    "home screen": "home",
+    "start screen": "home",
     "end round": "home",  # a shortcut back to the home screen
     "please exit golf": CLOSED,
     "on course practice": "on_course",
@@ -418,7 +419,7 @@ def slider_start(name: str) -> str:
     rect = _rect(hwnd)
     spec = SLIDER_PHRASES[name]
     if spec is None:
-        # mouse left / right: start where the pointer is, and move at a third of the slider speed
+        # slide left / right: start where the pointer is, and move at a sixth of the slider speed
         px, py = _cursor_pixel()
         left = (px - rect[0]) / max(rect[2] - rect[0], 1)
         y = (py - rect[1]) / max(rect[3] - rect[1], 1)
@@ -555,6 +556,14 @@ class Step:
     quiet: tuple[float, float, float, float] | None = None  # wait until this area holds still before clicking
     key: str | None = None  # pressed after the click
     settle: str = "long"  # pause after a quiet wait: "short" for quick screens, "long" otherwise
+    click: bool = True  # False: press the key only, without clicking (the target is then ignored)
+    presses: int = 1  # how many times the key is pressed
+
+
+# Number box pattern: open the box (a click), clear it with Backspace, then type the digits by voice
+# and press Enter with "done". One Backspace is enough: the click highlights the old value, so the
+# first Backspace clears all of it. The clear is kept so the box shows empty and the next input is clear.
+NUMBER_BOX_CLEAR_PRESSES = 1
 
 
 SEQUENCES: dict[str, tuple[Step, ...]] = {
@@ -575,7 +584,7 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     ),
     "back screen": (Step("BACK", BACK_BUTTON),),
     # Clicks BACK until a click does nothing, which means home (or as close as it can get).
-    "home screen": (Step("BACK", BACK_BUTTON, HOME_WATCH, repeat=8, wait=4.0),),
+    "start screen": (Step("BACK", BACK_BUTTON, HOME_WATCH, repeat=8, wait=4.0),),
     "please exit golf": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
     "on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
     "additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
@@ -587,7 +596,11 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     "holes tab": (Step("HOLES TAB", ROUND_TAB_HOLES),),
     # Practice range panel. "done" presses Enter in the distance box first (see _run), then Apply.
     "open preferences": (Step("PREFERENCES", PREFERENCES_CHEVRON),),
-    "change driving range distance": (Step("DISTANCE", DISTANCE_PENCIL),),
+    "change driving range distance": (
+        # number box pattern: click the first character (highlights the value), then one Backspace clears it
+        Step("DISTANCE", DISTANCE_FIRST_DIGIT),
+        Step("CLEAR BOX", DISTANCE_FIRST_DIGIT, key="backspace", click=False, presses=NUMBER_BOX_CLEAR_PRESSES),
+    ),
     "done": (),  # presses Enter in the distance box (see _run); Apply is its own command
     "apply": (Step("APPLY", APPLY_BUTTON),),
     "close preferences": (Step("PREFERENCES", PANEL_CLOSE_CHEVRON),),  # the up arrow on the open panel
@@ -646,6 +659,8 @@ SETTLE_KEY = "gspro_settle_seconds"
 SETTLE_DEFAULT = 1.0
 SHORT_SETTLE_KEY = "gspro_settle_short_seconds"
 SHORT_SETTLE_DEFAULT = 0.3
+# The pause after play course opens round settings: 75% less than the short settle above.
+ROUND_SETTLE_SECONDS = SHORT_SETTLE_DEFAULT * 0.25
 # Screens with a course search list. "play <name>" works on these, and the course names listen only here.
 COURSE_LIST_SCREENS = ("on_course", "additional", "local_match")
 # Round settings, reached from On course practice (practice) or Local match (play).
@@ -805,7 +820,7 @@ def _clear_course_filter(hwnd: int) -> None:
 def _play_course(text: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return "GSPro is not running. Say please play golf."
+        return "GSPro is not running. Say please start gspro."
     if _screen in ROUND_SETTINGS_SCREENS:
         # The course is already set up here, so the name is not needed: press PLAY.
         hwnd = find_window(GSPRO_TITLE)
@@ -845,7 +860,7 @@ def _play_course(text: str) -> str:
         log.info("play course %s: list area did not change after Play; going on", text)
     if _wait_until_still(hwnd, HOME_WATCH) is None:
         log.warning("play course %s: round settings kept moving", text)
-    time.sleep(_settle_floor(short=True))  # round settings load quickly
+    time.sleep(ROUND_SETTLE_SECONDS)  # round settings load quickly; cut 75% from the short settle
     # Play on a course opens round settings ("now" presses its PLAY). Play on an additional
     # range opens the driving range screen instead, which has no PLAY to press.
     if source == "additional":
@@ -894,13 +909,15 @@ EXIT_CONFIRM_SECONDS = 8.0  # "confirm exit" must come this soon after "please e
 _exit_armed_until = 0.0
 
 
-def request_exit() -> str:
-    """First step of closing GSpro. Nothing closes until confirm_exit is said in time."""
+def request_exit(on_done: Callable[[str], None] | None = None) -> str:
+    """Closes GSpro and the connectors. With the Confirm Exit preference on, this is only the first
+    step: nothing closes until confirm_exit is said in time. With it off, it closes at once."""
     global _exit_armed_until
-    if get_pref("allow_exit_golf", "False") != "True":
-        return "Closing GSpro by voice is off; turn on Allow Voice Exit in Preferences"
     if _screen != "home":
-        return "please exit golf: only from the home screen; say home screen first"
+        return "please exit golf: only from the home screen; say start screen first"
+    if get_pref("confirm_exit", "False") != "True":
+        _exit_armed_until = 0.0
+        return run_in_background("please exit golf", on_done)
     _exit_armed_until = time.monotonic() + EXIT_CONFIRM_SECONDS
     return f"Say confirm exit within {EXIT_CONFIRM_SECONDS:.0f} seconds to close GSpro"
 
@@ -935,7 +952,7 @@ def _remember_screen(name: str, note: str) -> None:
     global _screen, _marker_mode
     if note.startswith(("Already running", "GSPro window not found", "GSPro is not running")):
         return  # nothing was clicked, so the screen is unchanged
-    if name == "home screen" and "at home" in note:
+    if name == "start screen" and "at home" in note:
         _screen = "home"
     elif name == "back screen" and note.endswith(": done") and _screen:
         # BACK goes to the screen this one is reached from, as the tree says.
@@ -958,7 +975,7 @@ def _remember_screen(name: str, note: str) -> None:
 def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return "GSPro is not running. Say please play golf."
+        return "GSPro is not running. Say please start gspro."
     if name in ("show favorites", "show installed", "clear course") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:
@@ -977,13 +994,13 @@ def _run(name: str) -> str:
         return "marker place: map mode is on; say map mode end to finish"
     if name == "please exit golf" and _screen != "home":
         # EXIT is only on the home screen, so get there first with the same routine as "home screen".
-        home = _run("home screen")
+        home = _run("start screen")
         if not (home.endswith(": done") or "at home" in home or "nothing to go back" in home):
             return f"{name}: could not get to the home screen first ({home})"
         _screen = "home"
     # Home is not skipped even when the memory says home: a screen we did not track may
     # have a BACK button, and on a real home screen the first BACK click does nothing.
-    if name == "home screen" and _screen in ("range", "play", "course_practice", "driving_range"):
+    if name == "start screen" and _screen in ("range", "play", "course_practice", "driving_range"):
         name = "end round"  # from the range or a course, going home is ending the round
     steps = SEQUENCES[name]
     if name == "marker place":
@@ -1019,11 +1036,13 @@ def _run(name: str) -> str:
             time.sleep(_settle_floor(short=step.settle == "short"))  # a pause after it looks still, so the screen finishes loading
         rect = _rect(hwnd)
         before = _watch_grid(rect, step.watch) if step.watch is not None else None
-        click(*_point(rect, step.target), f"{name} step {number} {step.label}")
+        if step.click:
+            click(*_point(rect, step.target), f"{name} step {number} {step.label}")
         if step.key is not None:
             import pydirectinput
 
-            pydirectinput.press(step.key)  # a key after the click, such as Backspace after selecting text
+            for _ in range(step.presses):
+                pydirectinput.press(step.key)  # a key after the click, such as Backspace after selecting text
         if step.watch is not None:
             waited = _wait_for_change(hwnd, step.watch, before, step.wait)
             if waited is None:

@@ -8,7 +8,7 @@ Spoken phrases below are words that model does contain.
 from app.gspro_tree import SYNC_PHRASES
 
 WAKE_PHRASES = ("hey caddie", "hey caddy")
-LAUNCH_PHRASE = "please play golf"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
+LAUNCH_PHRASE = "please start gspro"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
 DEBUG_PHRASE = "debug press"  # one test press per command, for click debugging; handled in listener.py
 COURSE_PHRASE = "play"  # "play <name>" types the name in GSPro's course search; handled in listener.py
 ARM_SECONDS = 5.0
@@ -55,7 +55,7 @@ ROWS: tuple[Command, ...] = (
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
     Command(("stop",), "", "Stop aim, zoom, tee, flyover, a moving marker, or a slider being dragged", area="Aim"),
-    Command(("please play golf",), "", "Start GSPro if it is not running", area="Launch"),
+    Command(("please start gspro",), "", "Start GSPro if it is not running", area="Launch"),
     Command(("practice screen",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
     Command(
         ("gspro practice range", "gspro practice range screen", "gspro range"),
@@ -83,7 +83,7 @@ ROWS: tuple[Command, ...] = (
     ),
     Command(("end round",), "", "From the GSPro range, open the menu and end the round", area="Launch"),
     Command(("back screen", "go back"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),  # primary, then aliases
-    Command(("home screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
+    Command(("start screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
     Command(("please exit golf", "please stop gspro"), "", "Close GSpro and connectors (home screen; then say confirm exit)", area="Launch"),
     Command(("confirm exit",), "", "Confirm closing GSpro, within 8 seconds of please exit golf", area="Launch"),
     Command(("on course practice",), "", "From the GSPro practice screen, open on course practice", area="Launch"),
@@ -93,6 +93,40 @@ ROWS: tuple[Command, ...] = (
     Command(("open preferences",), "", "On the practice range, open the driving range panel (chevron)", area="Range"),
     Command(("change driving range distance", "change range distance"), "", "On the practice range, click the pencil on Driving Range Distance, then say the digits", area="Range"),
     Command(("done",), "", "In the driving range panel, press Enter in the distance box (keeps the typed number)", area="Range"),
+    Command(("open commands", "show commands"), "", "Show the commands dialog over GSPro", area="Help"),
+    Command(("close commands", "hide commands"), "", "Close the commands dialog", area="Help"),
+    Command(("place ball",), "", "Click the ball icon, then pick a point on the grid to place the ball", area="Ball"),
+    Command(("alpha",), "", "Grid: cell A (column or row)", area="Grid"),
+    Command(("bravo",), "", "Grid: cell B (column or row)", area="Grid"),
+    Command(("charlie",), "", "Grid: cell C (column or row)", area="Grid"),
+    Command(("delta",), "", "Grid: cell D (column or row)", area="Grid"),
+    Command(("echo",), "", "Grid: cell E (column or row)", area="Grid"),
+    Command(("foxtrot",), "", "Grid: cell F (column or row)", area="Grid"),
+    Command(("golf",), "", "Grid: cell G (column or row)", area="Grid"),
+    Command(("hotel",), "", "Grid: cell H (column or row)", area="Grid"),
+    Command(("india",), "", "Grid: cell I (column or row)", area="Grid"),
+    Command(("juliett",), "", "Grid: cell J (column or row)", area="Grid"),
+    Command(("kilo",), "", "Grid: cell K (column or row)", area="Grid"),
+    Command(("lima",), "", "Grid: cell L (column or row)", area="Grid"),
+    Command(("mike",), "", "Grid: cell M (column or row)", area="Grid"),
+    Command(("november",), "", "Grid: cell N (column or row)", area="Grid"),
+    Command(("oscar",), "", "Grid: cell O (column or row)", area="Grid"),
+    Command(("papa",), "", "Grid: cell P (column or row)", area="Grid"),
+    Command(("quebec",), "", "Grid: cell Q (column or row)", area="Grid"),
+    Command(("romeo",), "", "Grid: cell R (column or row)", area="Grid"),
+    Command(("sierra",), "", "Grid: cell S (column or row)", area="Grid"),
+    Command(("tango",), "", "Grid: cell T (column or row)", area="Grid"),
+    Command(("uniform",), "", "Grid: cell U (column or row)", area="Grid"),
+    Command(("victor",), "", "Grid: cell V (column or row)", area="Grid"),
+    Command(("whiskey",), "", "Grid: cell W (column or row)", area="Grid"),
+    Command(("xray",), "", "Grid: cell X (column or row)", area="Grid"),
+    Command(("yankee",), "", "Grid: cell Y (column or row)", area="Grid"),
+    Command(("zulu",), "", "Grid: cell Z (column or row)", area="Grid"),
+    Command(("show grid",), "", "Draw the grid: 26 by 26, then 10 by 10 inside the chosen cell; the point is clicked", area="Grid"),
+    Command(("hide grid",), "", "Hide the numbered grid", area="Grid"),
+    Command(("cancel grid",), "", "Close the grid and click the ball icon again, which undoes the placement", area="Grid"),
+    Command(("show current grammar",), "", "In the commands dialog, show the commands listening now", area="Help"),
+    Command(("show always on",), "", "In the commands dialog, show the always-on commands", area="Help"),
     Command(("apply",), "", "In the driving range panel, click APPLY (closes the panel)", area="Range"),
     Command(("change max distance", "change max"), "", "In the driving range panel, press the Max Distance slider's left end and drag right until stop", area="Range"),
     Command(("change min distance", "change min"), "", "In the driving range panel, press the Min Distance slider's left end and drag right until stop", area="Range"),
@@ -101,8 +135,8 @@ ROWS: tuple[Command, ...] = (
     Command(("change shots per five",), "", "In the driving range panel, click the 5 box under Shots Per", area="Range"),
     Command(("change shots per ten",), "", "In the driving range panel, click the 10 box under Shots Per", area="Range"),
     Command(("change shots per fifteen",), "", "In the driving range panel, click the 15 box under Shots Per", area="Range"),
-    Command(("slide left",), "", "In the driving range panel, press where the pointer is and slide left at a third of the slider speed until stop", area="Range"),
-    Command(("slide right",), "", "In the driving range panel, press where the pointer is and slide right at a third of the slider speed until stop", area="Range"),
+    Command(("slide left",), "", "In the driving range panel, press where the pointer is and slide left until stop", area="Range"),
+    Command(("slide right",), "", "In the driving range panel, press where the pointer is and slide right until stop", area="Range"),
     Command(("close preferences",), "", "In the driving range panel, click the chevron to close it", area="Range"),
     Command(("randomizer on",), "", "In the driving range panel, click the randomizer arrows (a click toggles; the app cannot read the state)", area="Range"),
     Command(("randomizer off",), "", "In the driving range panel, click the randomizer arrows (a click toggles; the app cannot read the state)", area="Range"),
@@ -126,9 +160,8 @@ ROWS: tuple[Command, ...] = (
     Command(("cancel menu",), "", "While playing: close the game menu", area="Launch"),
     Command(("debug press",), "", "Debug: one test press on the practice range card", area="Debug"),
     Command(("switch hand",), "n", "Switch hand", area="Aim", wired=False),
-    Command(("club up",), "i", "Next club toward the putter", area="Club", heard=False),
-    Command(("club down",), "k", "Next club toward the driver", area="Club", heard=False),
-    Command(("reset club",), "k", "Back to the driver", area="Club", heard=False),
+    Command(("club up",), "i", "Next club toward the putter", area="Club"),
+    Command(("club down",), "k", "Next club toward the driver", area="Club"),
     Command(("putter",), "u", "Jump to the putter", area="Club", heard=False),
     Command(("zoom in",), "q", "Zoom in", area="Map", repeat=True, hold=True),
     Command(("zoom out",), "w", "Zoom out", area="Map", repeat=True, hold=True),
@@ -149,9 +182,9 @@ ROWS: tuple[Command, ...] = (
     Command(("green grid",), "g", "Green grid", area="View"),
     Command(("pin indicator", "show pin", "pin"), "p", "Pin indicator", area="View"),
     Command(("range finder",), "r", "Range finder", area="View", closes=True),
-    Command(("move left",), "left", "Slide range finder left", area="View", hold=True),
-    Command(("move right",), "right", "Slide range finder right", area="View", hold=True),
-    Command(("hide ui", "hide interface"), "h", "Hide the interface", area="View"),
+    Command(("look left",), "left", "Slide range finder left", area="View", hold=True),
+    Command(("look right",), "right", "Slide range finder right", area="View", hold=True),
+    Command(("hide ui",), "h", "Hide the interface", area="View"),
     Command(("show ui", "open menu"), "esc", "Show the interface", area="View"),
     Command(("clear tracer",), "f1", "Clear tracers", area="View", wired=False),
     Command(("mulligan",), ("ctrl", "m"), "Mulligan", area="Mulligan"),
@@ -181,6 +214,7 @@ ROWS: tuple[Command, ...] = (
 # Each sync phrase has a secondary without the word "screen" at the end, and some have extra secondaries.
 _EXTRA_SYNC_ALIASES: dict[str, tuple[str, ...]] = {
     "sync to gspro practice range screen": ("sync to practice range", "sync to gspro range"),
+    "sync to course practice screen": ("sync to practice course",),
 }
 _SYNC_ROWS = tuple(
     Command(

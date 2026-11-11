@@ -182,7 +182,7 @@ _BY_KEY = {screen.key: screen for screen in SCREENS}
 # "sync to <screen>" tells the app which screen GSPro is on, when it has drifted out of sync.
 # It clicks nothing. The phrase maps to a screen key.
 SYNC_PHRASES: dict[str, str] = {
-    "sync to home screen": "home",
+    "sync to start screen": "home",
     "sync to practice screen": "practice",
     "sync to gspro practice range screen": "range",
     "sync to on course practice screen": "on_course",

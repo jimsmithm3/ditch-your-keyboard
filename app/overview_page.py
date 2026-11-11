@@ -136,7 +136,7 @@ class OverviewPage(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
         if current_screen() == CLOSED:
-            self._screen_title.setText("GSPro is not running. Say \"please play golf\".")
+            self._screen_title.setText("GSPro is not running. Say \"please start gspro\".")
             self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
             return
         current = tree.screen(current_screen())
@@ -163,4 +163,11 @@ class OverviewPage(QWidget):
         self._render_screen()
 
     def _on_heard(self, text: str) -> None:
-        self._last_heard.setText(f"Last heard: {text}")
+        # Count the same phrase said again in a row, so "close commands x2" shows two were heard.
+        if text == getattr(self, "_heard_text", None):
+            self._heard_count = getattr(self, "_heard_count", 1) + 1
+        else:
+            self._heard_text = text
+            self._heard_count = 1
+        suffix = f"  x{self._heard_count}" if self._heard_count > 1 else ""
+        self._last_heard.setText(f"Last heard: {text}{suffix}")

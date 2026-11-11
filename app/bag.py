@@ -23,24 +23,25 @@ class Club:
 
 
 # Bag order, driver toward putter. Spoken phrases are words in the small Vosk lexicon.
+# Club phrases start with "club" so a club name is not heard as a digit or another word.
 CATALOG = (
-    Club("Driver", ("driver",), "woods"),
-    Club("3 wood", ("three wood",), "woods"),
-    Club("5 wood", ("five wood",), "woods"),
-    Club("3 iron", ("three iron",), "irons"),
-    Club("4 iron", ("four iron",), "irons"),
-    Club("5 iron", ("five iron",), "irons"),
-    Club("6 iron", ("six iron",), "irons"),
-    Club("7 iron", ("seven iron",), "irons"),
-    Club("8 iron", ("eight iron",), "irons"),
-    Club("9 iron", ("nine iron",), "irons"),
-    Club("Utility iron", ("utility iron",), "irons"),
-    Club("Pitching wedge", ("pitching wedge",), "wedges"),
-    Club("Gap wedge", ("gap wedge",), "wedges"),
-    Club("Sand wedge", ("sand wedge",), "wedges"),
-    Club("56 wedge", ("fifty six wedge", "fifty six"), "wedges"),
-    Club("Lob wedge", ("lob wedge",), "wedges"),
-    Club("Putter", ("putter",), "other"),
+    Club("Driver", ("club driver",), "woods"),
+    Club("3 wood", ("club three wood",), "woods"),
+    Club("5 wood", ("club five wood",), "woods"),
+    Club("3 iron", ("club three iron",), "irons"),
+    Club("4 iron", ("club four iron",), "irons"),
+    Club("5 iron", ("club five iron",), "irons"),
+    Club("6 iron", ("club six iron",), "irons"),
+    Club("7 iron", ("club seven iron",), "irons"),
+    Club("8 iron", ("club eight iron",), "irons"),
+    Club("9 iron", ("club nine iron",), "irons"),
+    Club("Utility iron", ("club utility iron",), "irons"),
+    Club("Pitching wedge", ("club pitching wedge",), "wedges"),
+    Club("Gap wedge", ("club gap wedge",), "wedges"),
+    Club("Sand wedge", ("club sand wedge",), "wedges"),
+    Club("56 wedge", ("club fifty six wedge", "club fifty six"), "wedges"),
+    Club("Lob wedge", ("club lob wedge",), "wedges"),
+    Club("Putter", ("club putter",), "other"),
 )
 
 # Used when current_bag.txt does not exist yet. 3 iron, utility, and lob are off.
@@ -62,7 +63,7 @@ DEFAULT_BAG = (
 )
 
 _BY_PHRASE = {phrase: club.name for club in CATALOG for phrase in club.phrases}
-_MOVE_PHRASES = ("club up", "club down", "reset club")
+_MOVE_PHRASES: tuple[str, ...] = ()  # club up and club down are keystrokes now, not bag moves
 
 
 def spoken_phrases() -> tuple[str, ...]:
@@ -169,15 +170,7 @@ class Bag:
             if target == self.index:
                 return self._realign(target)
             return self._go(target)
-        if phrase == "club up":
-            return self._go(min(len(self._names) - 1, self.index + 1))
-        if phrase == "club down":
-            return self._go(max(0, self.index - 1))
-        if phrase == "reset club":
-            self.index = 0
-            keys = [CLUB_DOWN] * (len(self._names) - 1)
-            return Move(keys, _detail(keys))
-        return None
+        return None  # club up and club down are plain keystrokes (see the Club rows in commands.py)
 
     def _indexes(self) -> dict[str, int]:
         phrases_for = {club.name: club.phrases for club in CATALOG}

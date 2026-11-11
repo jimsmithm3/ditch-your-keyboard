@@ -204,6 +204,47 @@ def _commands_for(key: str) -> list[tuple[str, str, str, bool]]:
     return rows
 
 
+def phrase_rows(phrases, default_text: str) -> list[tuple[str, str, str, bool]]:
+    """Rows for a plain list of phrases (such as the global set), in the same columns as the screen tables."""
+    rows: list[tuple[str, str, str, bool]] = []
+    seen: set[str] = set()
+    for phrase in phrases:
+        if primary(phrase) != phrase or phrase in seen:
+            continue  # aliases are shown on their primary's row
+        seen.add(phrase)
+        rows.append(
+            (
+                phrase,
+                "\n".join(aliases_of(phrase)),
+                _DESCRIPTIONS.get(phrase, default_text),
+                _WIRED.get(phrase, False),
+            )
+        )
+    return rows
+
+
+def current_rows() -> tuple[str, list[tuple[str, str, str, bool]]]:
+    """What is listening right now: the open panel's commands, else the screen's, else nothing."""
+    panel = current_panel()
+    if panel:
+        return PANEL_NAMES.get(panel, panel), _panel_commands(panel)
+    key = current_screen()
+    if key in RECORDS_BY_KEY:
+        return RECORDS_BY_KEY[key].name, _commands_for(key)
+    return "GSPro (screen not known)", []
+
+
+def fill_table(table: QTableWidget, rows: list[tuple[str, str, str, bool]]) -> None:
+    """Fill a table with the four columns (Say, Also say, What it does, Wired up) from rows."""
+    table.setRowCount(len(rows))
+    for row, (say, also, what, wired) in enumerate(rows):
+        table.setItem(row, 0, QTableWidgetItem(say))
+        table.setItem(row, 1, QTableWidgetItem(also))
+        table.setItem(row, 2, QTableWidgetItem(what))
+        table.setItem(row, 3, QTableWidgetItem("yes" if wired else "no"))
+    table.resizeRowsToContents()
+
+
 def _place(key: str, depth: int, leaf_count: list[int], positions: dict[str, tuple[float, float]]) -> float:
     """Tidy layout: leaves sit side by side in order; each parent centers over its children."""
     kids = _children(key)
@@ -332,6 +373,9 @@ def build_screen_table(parent: QWidget | None = None) -> QMainWindow:
     tabs = QTabWidget()
     tabs.addTab(_table_page(), "Table")
     tabs.addTab(_tree_page(), "Tree")
+    from app.commands_page import build_active_page  # imported here: commands_page imports this module
+
+    tabs.addTab(build_active_page(), "Active commands")
     tabs.setCurrentIndex(1)  # the Tree opens first: it shows what each screen can do
     layout.addWidget(tabs, stretch=1)
 
