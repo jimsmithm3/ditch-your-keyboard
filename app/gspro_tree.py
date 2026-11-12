@@ -52,7 +52,7 @@ class Screen:
 
 PLAYERS = Action("Players")
 SETTINGS = Action("Settings")
-EXIT = Action("Exit", "please exit golf", ("please exit golf",))
+EXIT = Action("Exit", "gspro exit", ("gspro exit",))
 BACK = Action("Back", "back screen", ("back screen",))
 CONFIRM = Block("Confirm dialog", shot="confirm_dialog.png")
 PLAY_COURSE = Action(
@@ -67,7 +67,7 @@ SHOW_INSTALLED = Action("Show installed", "show installed", ("show installed",))
 CLEAR_COURSE = Action("Clear course search", "clear course", ("clear course",))
 SHOW_MENU = Action("Show menu", "show menu", ("show menu",), shot="training_screen.png")
 CANCEL_MENU = Action("Cancel menu", "cancel menu", ("cancel menu",))
-EXPAND_MAP = Action("Expand map", "expand map", (), shot="mini_map_expanded.png")  # keystroke S, not a click
+EXPAND_MAP = Action("Map resize", "map resize", (), shot="mini_map_expanded.png")  # keystroke S, not a click
 PLACE_MARKER = Action("Marker place", "marker place", ("marker place",))
 SHRINK_MAP = Action("Shrink map", "shrink map", ())  # keystroke S, not a click
 CHANGE_DISTANCE = Action("Change driving range distance", "change driving range distance", ("change driving range distance",), shot="driving_range_distance_dialog.png")

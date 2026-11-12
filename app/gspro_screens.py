@@ -11,7 +11,7 @@ that screen. check() compares the records with gspro_tree.py and commands.py.
 
 from dataclasses import dataclass
 
-from app.commands import DIGIT_KEYS, ROWS, aliases_of
+from app.commands import DIGIT_KEYS, ROWS, aliases_of, repeat_variants
 from app.gspro_tree import SCREENS as TREE_SCREENS
 from app.gspro_tree import SYNC_PHRASES
 
@@ -31,20 +31,20 @@ class Screen:
     parent: str | None  # the screen "go back" returns to; None for home
     trans: tuple[Trans, ...] = ()
     groups: tuple[str, ...] = ()
+    phrases: tuple[str, ...] = ()  # the screen's own commands that are not transitions; they are in its grammar
     note: str = ""  # a second line on the tree box, to say what the screen is for
 
 
 # Property and capability groups: the phrases each group holds. A screen has a group when
 # it lists the group's name in its groups.
 GROUPS: dict[str, tuple[str, ...]] = {
-    "Ball": ("place ball",),  # course practice and course play: the ball icon, then a grid point
-    "Exit": ("please exit golf", "confirm exit"),  # home screen only; exit takes two steps so it is not an accident
+    "Exit": ("gspro exit", "confirm exit"),  # home screen only; exit takes two steps so it is not an accident
     "Back": ("back screen",),
-    "Range": ("open preferences", "close preferences"),  # practice range: the driving range panel (see PANELS); close is here too, so it is heard after the panel memory drifts
+    "Range": ("open preferences", "close preferences", "change driving range distance"),  # GSPro Range only: the driving range panel (see PANELS); close is here too, so it is heard after the panel memory drifts
     "Tabs": ("players tab", "match tab", "holes tab"),  # round settings: the three tabs along the top
-    "Menu": ("show menu", "cancel menu", "end round"),
     "Course list": ("show favorites", "show installed", "clear course"),
-    "Club": ("club up", "club down", "putter"),
+    # "sync to <screen>": on every screen (see SCREEN_WIDE_GROUPS), not while a panel is open
+    "Sync": tuple(SYNC_PHRASES),
     "Aim": (
         "aim left",
         "aim right",
@@ -53,15 +53,36 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "reset aim",
         "aim point",
         "shot cam",
+        "stop",
+    ),
+    "View": (
+        "flyover",
+        "heat map",
+        "scorecard",
+        "close",
+        "green grid",
+        "pin indicator",
+        "range finder",
+        "look left",
+        "look right",
+        "clear tracer",
+    ),
+    # Hitting groups. hitting_base is for every screen where a ball is hit (course play, course practice, and
+    # later the ranges). hitting_course and hitting_range hold what is common to those screens but not to
+    # each other. Commands move in here once confirmed on both screens of their kind.
+    # Club names are spoken too, so they go with this group (see group_phrases). No club, no hit.
+    "hitting_base": ("hide ui", "show ui", "club up", "club down", "putter", "switch hand"),
+    # Course play and course practice only. Menu and ball placement are here too (the range screens lose
+    # them until the ranges are revisited).
+    "hitting_course": (
         "tee left",
         "tee right",
-        "stop",
-        "switch hand",
-    ),
-    "Map": (
+        "show menu",
+        "cancel menu",
+        "end round",
         "zoom in",
         "zoom out",
-        "expand map",
+        "map resize",
         "mini map",
         "shrink map",
         "map mode start",
@@ -75,28 +96,17 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "flight mode start",
         "free flight mode end",
         "flight mode end",
+        "sync map small",
+        "sync map large",
     ),
-    "View": (
-        "flyover",
-        "heat map",
-        "scorecard",
-        "close",
-        "green grid",
-        "pin indicator",
-        "range finder",
-        "look left",
-        "look right",
-        "hide ui",
-        "show ui",
-        "clear tracer",
-    ),
+    "hitting_range": (),  # the practice ranges; empty until the ranges are revisited
 }
 
 # The numbered grid. Its own grammar, on only while the grid is showing: the digit words pick cells.
 GRID_GROUP = "grid"
 # The grid's cells are spoken with the NATO alphabet: distinct words that are less often misheard than
 # digits. Each cell is labelled with the first letter of its word, A to J. "golf" is a risk: it is close
-# to "please start gspro", which always listens. The first word is cell 0 on the grid, and so on.
+# to "gspro start", which always listens. The first word is cell 0 on the grid, and so on.
 GRID_WORDS: tuple[str, ...] = (
     "alpha",
     "bravo",
@@ -136,12 +146,11 @@ DIALOG_PHRASES: tuple[str, ...] = ("show current grammar", "show always on")
 GLOBAL: tuple[str, ...] = (
     "stop listening",
     "start listening",
-    "please start gspro",
+    "gspro start",
     "start screen",
     "open commands",
     "close commands",
     "show grid",
-    *SYNC_PHRASES,
 )
 
 SCREEN_RECORDS: tuple[Screen, ...] = (
@@ -183,7 +192,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
     Screen("challenges", "Challenges", "home"),
     Screen("tournaments", "Tournaments", "home"),
     Screen("online", "Online match", "home"),
-    Screen("range", "GSPro Range", "practice", groups=("Menu", "Range"), note="hit balls"),
+    Screen("range", "GSPro Range", "practice", groups=("Range", "hitting_range"), note="hit balls"),
     Screen(
         "on_course",
         "On course practice",
@@ -200,7 +209,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         groups=("Back", "Course list"),
         note="range chooser",
     ),
-    Screen("driving_range", "Additional Range", "additional", groups=("Menu",), note="hit balls"),
+    Screen("driving_range", "Additional Range", "additional", groups=("hitting_range",), note="hit balls"),
     # Round settings, reached from On course practice (practice) or Local match (play).
     Screen(
         "round_settings_practice",
@@ -214,7 +223,14 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         ),
         groups=("Back", "Tabs"),
     ),
-    Screen("course_practice", "Course Practice", "round_settings_practice", groups=("Menu", "Club", "Aim", "Map", "View", "Ball")),
+    Screen(
+        "course_practice",
+        "Course Practice",
+        "round_settings_practice",
+        groups=("Aim", "View", "hitting_base", "hitting_course"),
+        # Only on course practice: 8 goes to the ball, 9 and 0 move between holes. Place ball is here too.
+        phrases=("place ball grid", "go to ball", "previous hole", "next hole"),
+    ),
     Screen(
         "round_settings_play",
         "Round Settings - Play",
@@ -225,7 +241,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         ),
         groups=("Back", "Tabs"),
     ),
-    Screen("play", "Course play", "round_settings_play", groups=("Menu", "Club", "Aim", "Map", "View", "Ball"), note="hit balls"),
+    Screen("play", "Course play", "round_settings_play", groups=("Aim", "View", "hitting_base", "hitting_course"), note="hit balls"),
 )
 
 RECORDS_BY_KEY = {screen.key: screen for screen in SCREEN_RECORDS}
@@ -237,6 +253,30 @@ def screen_group(key: str) -> str:
 
 
 SCREEN_GROUP_NAMES: tuple[str, ...] = tuple(screen_group(key) for key in RECORDS_BY_KEY)
+
+# Every group in GROUPS is its own grammar, listening on each screen whose record lists it. So a group
+# shows as its own grammar in the debug box and the Active commands tab, and is not copied into screens.
+# A group with no phrases yet is not built.
+def group_grammar(name: str) -> str:
+    """The speech grammar group name for a property group."""
+    return f"group:{name}"
+
+
+def group_phrases(name: str, spoken: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """The phrases a group's grammar holds. Club names (spoken) go with the Club group."""
+    return GROUPS[name] + (tuple(spoken) if name == "hitting_base" else ())
+
+
+SCREEN_WIDE_GROUPS: tuple[str, ...] = ("Sync",)  # every screen listens to these, in addition to its own groups
+
+
+def grammar_groups_for(key: str, spoken: tuple[str, ...] = ()) -> set[str]:
+    """The group grammars a screen listens to: its own groups and the screen-wide ones, if they have phrases."""
+    names = (*RECORDS_BY_KEY[key].groups, *SCREEN_WIDE_GROUPS)
+    return {group_grammar(name) for name in names if group_phrases(name, spoken)}
+
+
+GROUP_GRAMMAR_NAMES: tuple[str, ...] = tuple(group_grammar(name) for name in GROUPS if GROUPS[name])
 
 # Panels are sub-screens: a dialog or panel that opens on a screen and gets its own grammar while
 # it is open. Named by what it is, since more will be added (the map will be one). Opened and
@@ -276,10 +316,10 @@ PANEL_NAMES: dict[str, str] = {"driving_preferences_panel": "Driving Preferences
 PANEL_PARENTS: dict[str, str] = {"driving_preferences_panel": "range"}  # the screen the panel opens on
 
 
-def screen_phrases(key: str, spoken: tuple[str, ...] = ()) -> tuple[str, ...]:
-    """The phrases a screen's own grammar holds. A transition with no sequence yet is left out,
-    so it is not heard. Club names (spoken) go with the Club group. "play <...>" phrases are
-    left out here; the course grammar covers course names."""
+def screen_phrases(key: str) -> tuple[str, ...]:
+    """The phrases a screen's own grammar holds: its transitions only. Its property groups are their own
+    grammars (see grammar_groups_for). A transition with no sequence yet is left out, so it is not heard.
+    "play <...>" phrases are left out here; the course grammar covers course names."""
     record = RECORDS_BY_KEY[key]
     phrases: list[str] = []
     for trans in record.trans:
@@ -287,16 +327,13 @@ def screen_phrases(key: str, spoken: tuple[str, ...] = ()) -> tuple[str, ...]:
             if "<" not in trans.phrase:
                 phrases.append(trans.phrase)
             phrases.extend(trans.aliases)
-    for group in record.groups:
-        phrases.extend(GROUPS[group])
-        if group == "Club":
-            phrases.extend(spoken)
+    phrases.extend(record.phrases)
     return tuple(dict.fromkeys(phrases))
 
 
 def with_aliases(phrases) -> tuple[str, ...]:
     """Each primary phrase followed by its aliases, for the speech grammar."""
-    return tuple(dict.fromkeys(x for phrase in phrases for x in (phrase, *aliases_of(phrase))))
+    return tuple(dict.fromkeys(x for phrase in phrases for x in (phrase, *aliases_of(phrase), *repeat_variants(phrase))))
 
 
 def label(phrase: str) -> str:
@@ -309,10 +346,13 @@ def recognizer_setup(spoken: tuple[str, ...] = ()) -> tuple[tuple[str, ...], dic
     """What the speech recognizer listens to: (always-listening phrases, screen grammars by group name).
     Always listening: GLOBAL only. A command no record claims is not heard anywhere until it is assigned to a screen or panel.
     Aliases are added to every grammar that holds their primary."""
-    screen_grammars = {screen_group(key): with_aliases(screen_phrases(key, spoken)) for key in RECORDS_BY_KEY}
+    screen_grammars = {screen_group(key): with_aliases(screen_phrases(key)) for key in RECORDS_BY_KEY}
     panel_grammars = {panel_group(key): with_aliases(phrases) for key, phrases in PANELS.items()}
-    always = with_aliases(GLOBAL)  # only GLOBAL; a command listens where a screen or panel claims it
-    return always, {**screen_grammars, **panel_grammars}
+    group_grammars = {
+        group_grammar(name): with_aliases(group_phrases(name, spoken)) for name in GROUPS if group_phrases(name, spoken)
+    }
+    always = with_aliases(GLOBAL)  # only GLOBAL; a command listens where a screen, panel or group claims it
+    return always, {**screen_grammars, **panel_grammars, **group_grammars}
 
 
 def grammar_name(group: str) -> str:
@@ -323,6 +363,9 @@ def grammar_name(group: str) -> str:
     if group.startswith("panel:"):
         key = group[len("panel:"):]
         return f"Panel: {PANEL_NAMES.get(key, key)}"
+    if group.startswith("group:"):
+        text = group[len("group:"):].replace("_", " ")  # "hitting_base" reads "Hitting base"
+        return text[:1].upper() + text[1:]
     names = {"courses": "Course names", GRID_GROUP: "Grid", DIALOG_GROUP: "Commands dialog"}
     return names.get(group, group)
 
@@ -354,6 +397,10 @@ def check() -> list[str]:
         for phrase in phrases:
             if phrase not in known:
                 problems.append(f"group {group}: '{phrase}' is not a command in commands.py")
+    for record in RECORDS_BY_KEY.values():
+        for phrase in record.phrases:
+            if phrase not in known:
+                problems.append(f"{record.key}: '{phrase}' is not a command in commands.py")
     for phrase in GLOBAL:
         if phrase not in known:
             problems.append(f"global: '{phrase}' is not a command in commands.py")
@@ -374,7 +421,7 @@ def check() -> list[str]:
         for trans in record.trans:
             if trans.goes_to not in tree:
                 problems.append(f"{key}: transition '{trans.phrase}' goes to unknown screen {trans.goes_to}")
-        allowed = set(GLOBAL) | trans_phrases
+        allowed = set(GLOBAL) | trans_phrases | set(record.phrases)
         for group in record.groups:
             allowed |= set(GROUPS.get(group, ()))
         for action in node.actions:

@@ -157,7 +157,7 @@ PREFS: list[PrefSpec] = [
     PrefSpec(
         "Confirm Exit",
         "confirm_exit",
-        "On: say \"please exit golf\", then \"confirm exit\" within 8 seconds, to close GSPro and the connectors. Off (default): \"please exit golf\" closes them at once. Takes effect after a restart",
+        "On: say \"gspro exit\", then \"confirm exit\" within 8 seconds, to close GSPro and the connectors. Off (default): \"gspro exit\" closes them at once. Takes effect after a restart",
         "GSPRO",
         "False",
         "DROPDOWN",

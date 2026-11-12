@@ -136,7 +136,7 @@ class OverviewPage(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
         if current_screen() == CLOSED:
-            self._screen_title.setText("GSPro is not running. Say \"please start gspro\".")
+            self._screen_title.setText("GSPro is not running. Say \"gspro start\".")
             self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
             return
         current = tree.screen(current_screen())
@@ -145,13 +145,6 @@ class OverviewPage(QWidget):
             return
         self._screen_title.setText(f"Screen (last known): {current.name}")
         self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
-        for child in tree.children(current.key):
-            self._add_row(f"Say \"{child.phrase}\"", tree.status(child.sequences))
-        for action in current.actions:
-            if action.phrase:
-                self._add_row(f"Say \"{action.phrase}\"", tree.status(action.sequences), action.name)
-            else:
-                self._add_row(action.name, tree.status(action.sequences), "no voice command yet")
 
     def _add_row(self, text: str, status: str, note: str = "") -> None:
         label = QLabel(f"{text}   ·   {status}" + (f"   ({note})" if note else ""))

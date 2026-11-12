@@ -8,8 +8,11 @@ Click a Tested cell to toggle Yes / No.
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QHeaderView,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QTableWidget,
     QTabWidget,
@@ -19,15 +22,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.bag import spoken_phrases
-from app.commands import ROWS, Command, key_text, primary
+from app.commands import ROWS, Command, key_text, primary, shown
 from app.gspro_screens import (
     DIALOG_GROUP,
     DIALOG_PHRASES,
     GLOBAL,
     GRID_GROUP,
     active_groups,
+    group_phrases,
     GRID_PHRASES,
+    GROUP_GRAMMAR_NAMES,
+    PANEL_GROUP_NAMES,
     PANELS,
+    SCREEN_GROUP_NAMES,
     SCREEN_RECORDS,
     grammar_name,
     panel_group,
@@ -41,6 +48,10 @@ _UNWIRED = QBrush(QColor(255, 214, 214))
 _COLUMNS = ("Area", "Keystroke", "Voice command", "Description", "Close", "Continue", "Tested")
 _TESTED = len(_COLUMNS) - 1
 _KEY_ROLE = Qt.ItemDataRole.UserRole
+_GROUP_ROLE = Qt.ItemDataRole.UserRole + 1  # the grammar group name on a grammar list item
+_NARROW_COLUMNS = ("Always on", "Sync")  # the Active commands columns that are always the same; drag them wider if needed
+_NARROW_WIDTH = 20  # pixels
+_ROW_HEIGHT = 22  # pixels; one line per phrase
 
 
 def _stroke(command: Command) -> str:
@@ -77,7 +88,7 @@ def _voice_cell(command: Command) -> str:
         return "\n".join(f"{phrase} (until stop)" for phrase in command.phrases)
     if not command.repeat:
         return "\n".join(command.phrases)
-    return "\n".join(f"{phrase} (one to ten, or continue)" for phrase in command.phrases)
+    return "\n".join(shown(phrase) for phrase in command.phrases)  # (#): a number can be said after it
 
 
 def build_commands_page() -> QWidget:
@@ -177,17 +188,19 @@ def _primaries(phrases) -> list[str]:
     """Each command once, by its primary name (aliases left out)."""
     names: list[str] = []
     for phrase in phrases:
-        if primary(phrase) == phrase and phrase not in names:
-            names.append(phrase)
+        if primary(phrase) == phrase and shown(phrase) not in names:
+            names.append(shown(phrase))
     return names
 
 
 def _group_column(group: str, spoken) -> tuple[str, list[str]]:
     """One listening grammar: its readable name, then its commands by primary name."""
     if group.startswith("screen:"):
-        return grammar_name(group), _primaries(screen_phrases(group[len("screen:"):], spoken))
+        return grammar_name(group), _primaries(screen_phrases(group[len("screen:"):]))
     if group.startswith("panel:"):
         return grammar_name(group), _primaries(PANELS.get(group[len("panel:"):], ()))
+    if group.startswith("group:"):
+        return grammar_name(group), _primaries(group_phrases(group[len("group:"):], spoken))
     if group == GRID_GROUP:
         return grammar_name(group), _primaries(GRID_PHRASES)
     if group == DIALOG_GROUP:
@@ -204,33 +217,83 @@ def _active_columns() -> list[tuple[str, list[str]]]:
     return columns
 
 
+def _all_grammars() -> list[str]:
+    """Every grammar the app can switch on, by group name."""
+    return [*SCREEN_GROUP_NAMES, *PANEL_GROUP_NAMES, *GROUP_GRAMMAR_NAMES, GRID_GROUP, DIALOG_GROUP]
+
+
 def build_active_page() -> QWidget:
+    """Left, three quarters: the grammars listening now, side by side. Right: the grammars not listening,
+    and clicking one lists its phrases beside it, so it is easy to see what a page or panel is missing."""
     page = QWidget()
-    layout = QVBoxLayout(page)
+    layout = QHBoxLayout(page)
     table = QTableWidget(0, 0)
-    table.setWordWrap(True)
+    table.setWordWrap(False)  # long text is cut off with an ellipsis, so narrow columns do not make tall rows
     table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(_ROW_HEIGHT)  # fixed rows; the table is not resized to fit text
     table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    layout.addWidget(table)
+    layout.addWidget(table, stretch=3)
+    idle = QListWidget()  # grammars not listening right now
+    idle.setToolTip("Click a grammar to list its phrases")
+    phrases = QListWidget()  # the phrases of the grammar clicked
+    phrases.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+    layout.addWidget(idle, stretch=1)
+    layout.addWidget(phrases, stretch=1)
     shown: list = [None]
+    listed: list = [None]
+    shown_phrases: list = [None]
 
-    def refresh() -> None:
+    def refresh_table() -> None:
         columns = _active_columns()
-        signature = tuple((name, tuple(phrases)) for name, phrases in columns)
+        signature = tuple((name, tuple(names)) for name, names in columns)
         if signature == shown[0]:
             return  # nothing changed: leave the table alone
         shown[0] = signature
         table.clear()
-        table.setRowCount(max((len(phrases) for _, phrases in columns), default=0))
+        table.setRowCount(max((len(names) for _, names in columns), default=0))
         table.setColumnCount(len(columns))
         table.setHorizontalHeaderLabels([name for name, _ in columns])
-        for col, (_name, phrases) in enumerate(columns):
-            for row, phrase in enumerate(phrases):
+        for col, (_name, names) in enumerate(columns):
+            for row, phrase in enumerate(names):
                 table.setItem(row, col, QTableWidgetItem(phrase))
         table.resizeColumnsToContents()
-        table.resizeRowsToContents()
+        for col, (name, _names) in enumerate(columns):
+            if name in _NARROW_COLUMNS:
+                table.setColumnWidth(col, _NARROW_WIDTH)  # always on and sync are known: keep them narrow
 
+    def refresh_idle() -> None:
+        inactive = sorted(
+            (group for group in _all_grammars() if group not in active_groups()),
+            key=lambda group: grammar_name(group).lower(),  # alphabetical by the name shown
+        )
+        if inactive == listed[0]:
+            return
+        current = idle.currentItem().data(_GROUP_ROLE) if idle.currentItem() else None
+        listed[0] = inactive
+        idle.clear()
+        for group in inactive:
+            item = QListWidgetItem(grammar_name(group))
+            item.setData(_GROUP_ROLE, group)
+            idle.addItem(item)
+            if group == current:
+                idle.setCurrentItem(item)
+
+    def refresh_phrases() -> None:
+        item = idle.currentItem()
+        names = [] if item is None else _group_column(item.data(_GROUP_ROLE), tuple(spoken_phrases()))[1]
+        if names == shown_phrases[0]:
+            return  # same list: leave it alone, so it keeps its scroll position
+        shown_phrases[0] = names
+        phrases.clear()
+        phrases.addItems(names)
+
+    def refresh() -> None:
+        refresh_table()
+        refresh_idle()
+        refresh_phrases()
+
+    idle.currentRowChanged.connect(lambda _row: refresh_phrases())
     refresh()
     timer = QTimer(page)  # follows the grammars while the tab is open
     timer.timeout.connect(refresh)

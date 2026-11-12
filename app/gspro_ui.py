@@ -34,6 +34,10 @@ LOCAL_CARD = (0.135, 0.722)  # PLAY on the home screen, which opens LOCAL MATCH 
 # Mini map on the course screen. Its center is where a marker is dropped.
 MAP_SMALL_CENTER = (0.921, 0.758)  # the small map, lower right
 MAP_EXPANDED_CENTER = (0.855, 0.544)  # the map when expanded with S
+# The map's edges as (left, top, right, bottom) fractions of the GSPro window, for placing the ball on the map.
+# Estimated from screenshots (small_map.png, large_map.png); check them in the app.
+MAP_SMALL_BOUNDS = (0.855, 0.525, 0.988, 0.992)
+MAP_EXPANDED_BOUNDS = (0.723, 0.093, 0.988, 0.992)
 SEARCH_BOX = (0.35, 0.123)  # "What course do you want to play?"
 CLEAR_SEARCH_CLICK = (0.052, 0.125)  # first letter of the search text; a click here selects all of it
 FIRST_PLAY = (0.612, 0.208)  # PLAY on the first row of the list

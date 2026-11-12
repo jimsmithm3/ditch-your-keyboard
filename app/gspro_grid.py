@@ -1,29 +1,32 @@
 """A lettered grid over the GSPro window, for placing the pointer precisely by voice.
 
 The first grid is 26 by 26, one cell per letter. Say the column word, then the row word. The chosen
-cell becomes the new region, and the second grid is 10 by 10 inside it. Say the column and row again.
+cell becomes the new region, and the second grid is 4 by 4 inside it. Say the column and row again.
 After the second pick, the centre of that cell is the point. Positions are fractions of the GSPro window.
 The overlay is click-through and takes no focus. Look and feel are not final.
 """
 
 import ctypes
 import logging
+import time
 from collections.abc import Callable
+from ctypes import wintypes
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from app.clicks import click
+from app.clicks import click, move
+from app.commands import press_keys
 from app.connector_ui import _point, _rect, find_window
 from app.focus import _force_foreground
 from app.gspro_overlay import set_status
 from app.gspro_screens import GRID_WORDS
-from app.gspro_ui import BALL_ICON, GSPRO_TITLE
+from app.gspro_ui import BALL_ICON, GSPRO_TITLE, MAP_EXPANDED_BOUNDS, MAP_SMALL_BOUNDS
 
 log = logging.getLogger(__name__)
 
-LEVEL_CELLS = (26, 10)  # cells per side for each pass: 26 by 26, then 10 by 10 inside the chosen cell
+LEVEL_CELLS = (26, 4)  # cells per side for each pass: 26 by 26, then 4 by 4 inside the chosen cell
 LEVELS = len(LEVEL_CELLS)
 GRID_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # the letter on each cell; the words are in gspro_screens
 Region = tuple[float, float, float, float]  # left, top, right, bottom, as fractions of the GSPro window
@@ -34,6 +37,19 @@ _region: Region = FULL
 _level = 0
 _first: int | None = None  # the column word, waiting for its row word
 _on_final: Callable[[float, float], None] | None = None
+
+
+COLUMN_SHADE = QColor(200, 200, 200, 40)  # a very light grey, see-through, for every other column
+
+
+def _draw_vertical(painter: QPainter, text: str, x: float, y: float, reads_down: bool) -> None:
+    """Draw text turned a quarter turn. reads_down: it starts at (x, y) and runs down the window, with its
+    top to the right. Otherwise it starts at (x, y) and runs up, with its top to the left."""
+    painter.save()
+    painter.translate(x, y)
+    painter.rotate(90 if reads_down else -90)
+    painter.drawText(0, 0, text)
+    painter.restore()
 
 
 class _Overlay(QWidget):
@@ -51,7 +67,7 @@ class _Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.region: Region = FULL
-        self.level = 0  # which pass is showing: 0 is the 26 by 26 grid, 1 the 10 by 10
+        self.level = 0  # which pass is showing: 0 is the 26 by 26 grid, 1 the 4 by 4
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt name)
         cells = LEVEL_CELLS[self.level]
@@ -61,7 +77,10 @@ class _Overlay(QWidget):
         w, h = (right - left) * width, (bottom - top) * height
         cell_w, cell_h = w / cells, h / cells
         painter = QPainter(self)
-        pen = QPen(QColor(255, 255, 255, 140))
+        # The lines are see-through so GSPro shows underneath. The 4 by 4 pass sits close over the cells
+        # of the first, so it is fainter than the 26 by 26 but a little less transparent than before.
+        line_alpha, label_alpha = (90, 150) if self.level == 0 else (60, 100)
+        pen = QPen(QColor(255, 255, 255, line_alpha))
         pen.setWidth(1)
         painter.setPen(pen)
         for i in range(cells + 1):
@@ -70,23 +89,27 @@ class _Overlay(QWidget):
             y = y0 + cell_h * i
             painter.drawLine(int(x0), int(y), int(x0 + w), int(y))
         font = QFont()
-        font.setPointSize(9 if self.level == 0 else 7)  # the 26 by 26 pass shows full words, so it is smaller
+        font.setPointSize(11 if self.level == 0 else 7)  # the 26 by 26 pass shows full words, so it is smaller
         font.setBold(True)
         painter.setFont(font)
-        black = QColor(0, 0, 0, 230)
-        white = QColor(255, 255, 255, 230)
+        white = QColor(255, 255, 255, label_alpha)  # the labels, all white and semi-transparent
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i in range(0, cells, 2):  # every other column is shaded, so it is easy to tell which column you are in
+            painter.fillRect(int(x0 + cell_w * i), int(y0), int(cell_w), int(h), COLUMN_SHADE)
+        painter.setPen(white)
         metrics = painter.fontMetrics()
         for i in range(cells):
             label = GRID_WORDS[i] if self.level == 0 else GRID_LABELS[i]  # full NATO words on the 26 by 26 pass
             text_w = metrics.horizontalAdvance(label)
-            col_x = int(x0 + cell_w * i + cell_w / 2 - text_w / 2)
-            row_y = int(y0 + cell_h * i + cell_h / 2 + 6)
-            # column labels: black along the top, white along the bottom. Row labels: black on the left, white on the right.
-            painter.setPen(black)
-            painter.drawText(col_x, int(y0 + 18), label)
+            # Rows count up from the bottom, like a 0,0 origin: alpha (row 0) is the bottom row.
+            row_y = int(y0 + cell_h * (cells - 1 - i) + cell_h / 2 + 6)
+            centre = x0 + cell_w * i + cell_w / 2  # the column's middle, for the vertical column labels
+            ascent = metrics.ascent()
+            # Column labels run vertically: along the top reading down, along the bottom reading up.
+            # Row labels stay horizontal: on the left and on the right.
+            _draw_vertical(painter, label, centre - ascent / 2, y0 + 4, reads_down=True)
             painter.drawText(int(x0 + 6), row_y, label)
-            painter.setPen(white)
-            painter.drawText(col_x, int(y0 + h - 8), label)
+            _draw_vertical(painter, label, centre + ascent / 2, y0 + h - 4, reads_down=False)
             painter.drawText(int(x0 + w - text_w - 6), row_y, label)
         painter.end()
 
@@ -120,10 +143,10 @@ def _place() -> bool:
     return True
 
 
-def start(on_final: Callable[[float, float], None] | None = None) -> None:
+def start(on_final: Callable[[float, float], None] | None = None, region: Region = FULL) -> None:
     global _region, _level, _first, _on_final
     _ensure()
-    _region, _level, _first = FULL, 0, None
+    _region, _level, _first = region, 0, None
     _on_final = on_final or _click_point
     if not _place():
         log.info("grid: GSPro window not found")
@@ -148,7 +171,7 @@ def is_showing() -> bool:
 
 def pick(index: int) -> None:
     """One word. The first is the column, the second the row; the cell is then the new region.
-    A word past the end of the current grid (for example "tango" on the 10 by 10) is ignored."""
+    A word past the end of the current grid (for example "echo" on the 4 by 4) is ignored."""
     global _region, _level, _first
     if not is_showing():
         return
@@ -159,7 +182,7 @@ def pick(index: int) -> None:
     if _first is None:
         _first = index
         return
-    column, row = _first, index
+    column, row = _first, cells - 1 - index  # the row word counts up from the bottom, to match the labels
     _first = None
     left, top, right, bottom = _region
     cell_w, cell_h = (right - left) / cells, (bottom - top) / cells
@@ -183,23 +206,101 @@ def _click_point(x: float, y: float) -> None:
     if hwnd is None or not _force_foreground(hwnd):
         log.info("place ball: GSPro not in front; not clicked")
         return
-    click(*_point(_rect(hwnd), (x, y)), "place ball: grid point")
+    # Move the cursor onto the point first and let it rest there, so the ball cursor is on the spot before
+    # the press. Then click at the same spot.
+    point = _point(_rect(hwnd), (x, y))
+    move(*point, "place ball: grid point")
+    time.sleep(PLACE_HOVER_SECONDS)
+    click(*point, "place ball: grid point")
     set_status(f"Ball placed at x {x:.3f}, y {y:.3f}")
 
 
+MAP_RESIZE_SECONDS = 0.6  # a settle pause after the S key, so GSPro has finished resizing the mini map
+MAP_RESTORE_WAIT_SECONDS = 1.0  # before the S key that makes the map small again, after the ball icon click
+PLACE_HOVER_SECONDS = 1.0  # the cursor rests on the picked point before the press, so the ball cursor is there first
+SETTLE_SECONDS = 0.5  # a pause between the point click and the ball icon click, so GSPro takes the first one
+_restore_small = False  # True while the map is large only for ball placement; it goes back to small after
+
+
+def _map_to_large() -> None:
+    """Ball placement only works on the large map. If the map is small, press S to make it large first."""
+    global _restore_small
+    from app.gspro_sequences import map_expanded, toggle_map
+
+    if map_expanded():
+        return  # already large: nothing to do with the map
+    press_keys("s")
+    toggle_map()  # keeps the app's flag in step with the key
+    time.sleep(MAP_RESIZE_SECONDS)
+    _restore_small = True
+
+
+def _map_restore() -> None:
+    """Put the map back to small if placement made it large."""
+    global _restore_small
+    if not _restore_small:
+        return
+    _restore_small = False
+    from app.gspro_sequences import toggle_map
+
+    time.sleep(MAP_RESTORE_WAIT_SECONDS)  # a full second, so the ball icon click has settled before the map changes
+    press_keys("s")
+    toggle_map()
+
+
+class _CursorInfo(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("hCursor", ctypes.c_void_p),
+        ("ptScreenPos", wintypes.POINT),
+    ]
+
+
+def _cursor_is_ball() -> bool:
+    """True when Windows shows a cursor that is not the normal arrow, I-beam or hand. GSPro's ball form is one
+    of those custom cursors; over GSPro otherwise the cursor is the arrow."""
+    info = _CursorInfo()
+    info.cbSize = ctypes.sizeof(_CursorInfo)
+    if not ctypes.windll.user32.GetCursorInfo(ctypes.byref(info)) or not info.hCursor:
+        return False
+    user32 = ctypes.windll.user32
+    user32.LoadCursorW.restype = ctypes.c_void_p
+    user32.LoadCursorW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    standard = {user32.LoadCursorW(None, ident) for ident in (32512, 32513, 32649)}  # arrow, I-beam, hand
+    return info.hCursor not in standard
+
+
+def _finish(x: float, y: float) -> None:
+    """The final pick: click the point. If the cursor still shows the ball form, click the ball icon to finish
+    placement. Then put the map back the way it was."""
+    _click_point(x, y)
+    time.sleep(SETTLE_SECONDS)
+    ball = _cursor_is_ball()
+    log.info("place ball: after the point the cursor is %s", "the ball form" if ball else "a normal cursor")
+    if ball:
+        hwnd = find_window(GSPRO_TITLE)
+        if hwnd is not None and _force_foreground(hwnd):
+            click(*_point(_rect(hwnd), BALL_ICON), "place ball: ball icon to finish")
+    _map_restore()
+
+
 def _place_ball() -> None:
-    """Click the ball icon (placement mode), then pick the point on the grid. The point is clicked."""
+    """Make the map large if needed, click the ball icon (placement mode), then pick the point on the grid.
+    The grid covers the large map only, so the point is on the map."""
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None or not _force_foreground(hwnd):
         log.info("place ball: GSPro not in front; not started")
         return
+    _map_to_large()
     click(*_point(_rect(hwnd), BALL_ICON), "place ball: ball icon")
-    start(on_final=_click_point)
+    start(on_final=_finish, region=MAP_EXPANDED_BOUNDS)
 
 
 def _cancel() -> None:
-    """Close the grid and click the ball icon again, which backs out of placement mode."""
+    """Close the grid, put the map back, and click the ball icon again, which backs out of placement mode."""
     stop()
+    _map_restore()
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None or not _force_foreground(hwnd):
         log.info("cancel grid: GSPro not in front; not clicked")
@@ -216,6 +317,7 @@ def handle(event: tuple[str, int | None]) -> None:
         start()
     elif action == "close":
         stop()
+        _map_restore()
     elif action == "cancel":
         _cancel()
     elif action == "pick" and value is not None:

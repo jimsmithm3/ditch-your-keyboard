@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.commands import DIGIT_KEYS, ROWS, aliases_of, primary
+from app.commands import DIGIT_KEYS, ROWS, aliases_of, primary, shown
 from app.gspro_sequences import current_panel, current_screen
+from app.window_places import COMMANDS_KEY, remember, restore
 from app.gspro_screens import (
     GLOBAL,
     recognizer_setup,
@@ -184,6 +185,15 @@ def _commands_for(key: str) -> list[tuple[str, str, str, bool]]:
                 bool(trans.sequence),
             )
         )
+    for phrase in record.phrases:  # the screen's own commands, not transitions
+        rows.append(
+            (
+                shown(phrase),
+                "\n".join(aliases_of(phrase)),
+                _DESCRIPTIONS.get(primary(phrase), record.name),
+                _WIRED.get(primary(phrase), False),
+            )
+        )
     digits_listed = False
     for group in record.groups:
         for phrase in GROUPS[group]:
@@ -195,7 +205,7 @@ def _commands_for(key: str) -> list[tuple[str, str, str, bool]]:
                 continue
             rows.append(
                 (
-                    phrase,
+                    shown(phrase),
                     "\n".join(aliases_of(phrase)),
                     _DESCRIPTIONS.get(primary(phrase), group),
                     _WIRED.get(primary(phrase), False),
@@ -376,7 +386,7 @@ def build_screen_table(parent: QWidget | None = None) -> QMainWindow:
     from app.commands_page import build_active_page  # imported here: commands_page imports this module
 
     tabs.addTab(build_active_page(), "Active commands")
-    tabs.setCurrentIndex(1)  # the Tree opens first: it shows what each screen can do
+    tabs.setCurrentIndex(2)  # Active commands opens first: it shows what is listening now
     layout.addWidget(tabs, stretch=1)
 
     problems = check()
@@ -409,4 +419,6 @@ def show_screen_table(parent: QWidget | None = None) -> None:
     # No parent: a window with a parent is kept above that parent on Windows, which hides the main
     # app behind it. Without one, the table is an ordinary window and the main app can come forward.
     _open = build_screen_table(None)
+    restore(_open, COMMANDS_KEY)  # where it was last closed or moved, if that is still on screen
+    remember(_open, COMMANDS_KEY)
     _open.show()

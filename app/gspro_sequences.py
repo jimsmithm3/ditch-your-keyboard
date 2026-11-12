@@ -93,7 +93,7 @@ SCREEN_AFTER: dict[str, str] = {
     "gspro practice range": "range",
     "start screen": "home",
     "end round": "home",  # a shortcut back to the home screen
-    "please exit golf": CLOSED,
+    "gspro exit": CLOSED,
     "on course practice": "on_course",
     "additional ranges": "additional",
     "play screen": "local_match",
@@ -136,9 +136,27 @@ def toggle_map() -> None:
     _map_expanded = not _map_expanded
 
 
+MAP_SIZE_PHRASES: dict[str, bool] = {"sync map small": False, "sync map large": True}
+
+
+def map_expanded() -> bool:
+    """True when the app believes the mini map is expanded (large)."""
+    return _map_expanded
+
+
+def set_map_size(phrase: str) -> None:
+    """Set the app's flag for the mini map's size to what GSPro shows. No keys, no clicks. For when the flag
+    has drifted from the screen (the S key was pressed outside the app)."""
+    global _map_expanded
+    _map_expanded = MAP_SIZE_PHRASES[phrase]
+
+
 def set_ui_hidden(hidden: bool) -> None:
     global _ui_hidden
     _ui_hidden = hidden
+    from app.gspro_overlay import set_hidden  # our bottom line goes with GSPro's own UI
+
+    set_hidden(hidden)
 
 
 # Marker nudging (course screen): "marker left" etc. move the pointer a little at a time from
@@ -542,6 +560,9 @@ def _show_interface() -> None:
 
     pydirectinput.press("esc")
     _ui_hidden = False
+    from app.gspro_overlay import set_hidden
+
+    set_hidden(False)
     log.info("interface was hidden; pressed Esc to show it")
     time.sleep(SHOW_UI_SECONDS)
 
@@ -585,7 +606,7 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     "back screen": (Step("BACK", BACK_BUTTON),),
     # Clicks BACK until a click does nothing, which means home (or as close as it can get).
     "start screen": (Step("BACK", BACK_BUTTON, HOME_WATCH, repeat=8, wait=4.0),),
-    "please exit golf": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
+    "gspro exit": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
     "on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
     "additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
     "play screen": (Step("LOCAL MATCH", LOCAL_CARD, WATCH_SCREEN),),
@@ -820,7 +841,7 @@ def _clear_course_filter(hwnd: int) -> None:
 def _play_course(text: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return "GSPro is not running. Say please start gspro."
+        return "GSPro is not running. Say gspro start."
     if _screen in ROUND_SETTINGS_SCREENS:
         # The course is already set up here, so the name is not needed: press PLAY.
         hwnd = find_window(GSPRO_TITLE)
@@ -895,7 +916,7 @@ def run_sequence(name: str) -> str:
         _remember_panel(name, note)
         if note.endswith(": done") or "at home" in note:
             set_bool(f"tree.done:{name}", True)  # ran successfully: shows as done on Overview
-        if name == "please exit golf" and (note.endswith(": done") or note.startswith("GSPro is not running")):
+        if name == "gspro exit" and (note.endswith(": done") or note.startswith("GSPro is not running")):
             from app.launch import stop_connector
 
             log.info("exit golf: %s", stop_connector())  # the connector goes with GSPro
@@ -905,7 +926,7 @@ def run_sequence(name: str) -> str:
         _lock.release()
 
 
-EXIT_CONFIRM_SECONDS = 8.0  # "confirm exit" must come this soon after "please exit golf"
+EXIT_CONFIRM_SECONDS = 8.0  # "confirm exit" must come this soon after "gspro exit"
 _exit_armed_until = 0.0
 
 
@@ -914,22 +935,22 @@ def request_exit(on_done: Callable[[str], None] | None = None) -> str:
     step: nothing closes until confirm_exit is said in time. With it off, it closes at once."""
     global _exit_armed_until
     if _screen != "home":
-        return "please exit golf: only from the home screen; say start screen first"
+        return "gspro exit: only from the home screen; say start screen first"
     if get_pref("confirm_exit", "False") != "True":
         _exit_armed_until = 0.0
-        return run_in_background("please exit golf", on_done)
+        return run_in_background("gspro exit", on_done)
     _exit_armed_until = time.monotonic() + EXIT_CONFIRM_SECONDS
     return f"Say confirm exit within {EXIT_CONFIRM_SECONDS:.0f} seconds to close GSpro"
 
 
 def confirm_exit(on_done: Callable[[str], None] | None = None) -> str:
-    """Second step: closes GSpro, but only if please exit golf was said just before."""
+    """Second step: closes GSpro, but only if gspro exit was said just before."""
     global _exit_armed_until
     armed = time.monotonic() <= _exit_armed_until
     _exit_armed_until = 0.0
     if not armed:
-        return "Not armed: say please exit golf first"
-    return run_in_background("please exit golf", on_done)
+        return "Not armed: say gspro exit first"
+    return run_in_background("gspro exit", on_done)
 
 
 def sync_screen(key: str) -> str:
@@ -975,7 +996,7 @@ def _remember_screen(name: str, note: str) -> None:
 def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return "GSPro is not running. Say please start gspro."
+        return "GSPro is not running. Say gspro start."
     if name in ("show favorites", "show installed", "clear course") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:
@@ -992,7 +1013,7 @@ def _run(name: str) -> str:
         return "marker place: say play screen and now first"
     if name == "marker place" and _marker_mode:
         return "marker place: map mode is on; say map mode end to finish"
-    if name == "please exit golf" and _screen != "home":
+    if name == "gspro exit" and _screen != "home":
         # EXIT is only on the home screen, so get there first with the same routine as "home screen".
         home = _run("start screen")
         if not (home.endswith(": done") or "at home" in home or "nothing to go back" in home):

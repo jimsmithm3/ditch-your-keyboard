@@ -8,7 +8,7 @@ Spoken phrases below are words that model does contain.
 from app.gspro_tree import SYNC_PHRASES
 
 WAKE_PHRASES = ("hey caddie", "hey caddy")
-LAUNCH_PHRASE = "please start gspro"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
+LAUNCH_PHRASE = "gspro start"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
 DEBUG_PHRASE = "debug press"  # one test press per command, for click debugging; handled in listener.py
 COURSE_PHRASE = "play"  # "play <name>" types the name in GSPro's course search; handled in listener.py
 ARM_SECONDS = 5.0
@@ -55,7 +55,7 @@ ROWS: tuple[Command, ...] = (
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
     Command(("stop",), "", "Stop aim, zoom, tee, flyover, a moving marker, or a slider being dragged", area="Aim"),
-    Command(("please start gspro",), "", "Start GSPro if it is not running", area="Launch"),
+    Command(("gspro start",), "", "Start GSPro if it is not running", area="Launch"),
     Command(("practice screen",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
     Command(
         ("gspro practice range", "gspro practice range screen", "gspro range"),
@@ -84,8 +84,8 @@ ROWS: tuple[Command, ...] = (
     Command(("end round",), "", "From the GSPro range, open the menu and end the round", area="Launch"),
     Command(("back screen", "go back"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),  # primary, then aliases
     Command(("start screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
-    Command(("please exit golf", "please stop gspro"), "", "Close GSpro and connectors (home screen; then say confirm exit)", area="Launch"),
-    Command(("confirm exit",), "", "Confirm closing GSpro, within 8 seconds of please exit golf", area="Launch"),
+    Command(("gspro exit", "gspro stop"), "", "Close GSpro and connectors (home screen; then say confirm exit)", area="Launch"),
+    Command(("confirm exit",), "", "Confirm closing GSpro, within 8 seconds of gspro exit", area="Launch"),
     Command(("on course practice",), "", "From the GSPro practice screen, open on course practice", area="Launch"),
     Command(("additional ranges",), "", "From the GSPro practice screen, open additional ranges", area="Launch"),
     Command(("play screen",), "", "From the GSPro home screen, press PLAY to open the course list", area="Launch"),
@@ -95,7 +95,7 @@ ROWS: tuple[Command, ...] = (
     Command(("done",), "", "In the driving range panel, press Enter in the distance box (keeps the typed number)", area="Range"),
     Command(("open commands", "show commands"), "", "Show the commands dialog over GSPro", area="Help"),
     Command(("close commands", "hide commands"), "", "Close the commands dialog", area="Help"),
-    Command(("place ball",), "", "Click the ball icon, then pick a point on the grid to place the ball", area="Ball"),
+    Command(("place ball grid",), "", "Click the ball icon, then pick a point on the grid to place the ball", area="Ball"),
     Command(("alpha",), "", "Grid: cell A (column or row)", area="Grid"),
     Command(("bravo",), "", "Grid: cell B (column or row)", area="Grid"),
     Command(("charlie",), "", "Grid: cell C (column or row)", area="Grid"),
@@ -159,13 +159,15 @@ ROWS: tuple[Command, ...] = (
     Command(("show menu",), "", "While playing: open the game menu (hamburger, upper right)", area="Launch"),
     Command(("cancel menu",), "", "While playing: close the game menu", area="Launch"),
     Command(("debug press",), "", "Debug: one test press on the practice range card", area="Debug"),
-    Command(("switch hand",), "n", "Switch hand", area="Aim", wired=False),
+    Command(("switch hand",), "n", "Switch hand", area="hitting_base"),
     Command(("club up",), "i", "Next club toward the putter", area="Club"),
     Command(("club down",), "k", "Next club toward the driver", area="Club"),
     Command(("putter",), "u", "Jump to the putter", area="Club", heard=False),
     Command(("zoom in",), "q", "Zoom in", area="Map", repeat=True, hold=True),
     Command(("zoom out",), "w", "Zoom out", area="Map", repeat=True, hold=True),
-    Command(("expand map", "mini map", "shrink map"), "s", "Toggle the mini map (S): expand or shrink", area="Map", closes=True),
+    Command(("map resize", "mini map", "shrink map"), "s", "Toggle the mini map (S): expand or shrink", area="Map", closes=True),
+    Command(("sync map small",), "", "Tell the app the mini map is small (no keys, no clicks)", area="Map"),
+    Command(("sync map large",), "", "Tell the app the mini map is large (no keys, no clicks)", area="Map"),
     Command(("map mode start",), "", "On the course screen, hold the mouse button on the mini map center (distances show)", area="Map"),
     Command(("map mode end",), "", "Let go of the mouse button and leave map mode", area="Map"),
     Command(("free flight mode start", "flight mode start"), "", "On the course screen, turn on free flight (F5)", area="Map"),
@@ -184,8 +186,8 @@ ROWS: tuple[Command, ...] = (
     Command(("range finder",), "r", "Range finder", area="View", closes=True),
     Command(("look left",), "left", "Slide range finder left", area="View", hold=True),
     Command(("look right",), "right", "Slide range finder right", area="View", hold=True),
-    Command(("hide ui",), "h", "Hide the interface", area="View"),
-    Command(("show ui", "open menu"), "esc", "Show the interface", area="View"),
+    Command(("hide ui",), "h", "Hide the interface", area="hitting_base"),
+    Command(("show ui", "open menu"), "esc", "Show the interface", area="hitting_base"),
     Command(("clear tracer",), "f1", "Clear tracers", area="View", wired=False),
     Command(("mulligan",), ("ctrl", "m"), "Mulligan", area="Mulligan"),
     Command(("cam go to ball",), "5", "Camera to the ball", area="Camera", wired=False),
@@ -242,6 +244,15 @@ _NUMBER_WORDS = (
 _COUNT = {word: number for number, word in enumerate(_NUMBER_WORDS, start=1)}
 
 
+def repeat_variants(phrase: str) -> tuple[str, ...]:
+    """The numbered and continue forms of a repeat command, such as "zoom in five" or "zoom in continue".
+    Empty for any other phrase. The grammar listens for these; they are not shown in the tables."""
+    for row in ROWS:
+        if row.repeat and phrase in row.phrases:
+            return tuple(f"{phrase} {word}" for word in (*_NUMBER_WORDS, "continue"))
+    return ()
+
+
 def _heard_phrases(row: Command) -> tuple[str, ...]:
     if not row.repeat:
         return row.phrases
@@ -288,6 +299,14 @@ def primary(phrase: str) -> str:
 def aliases_of(primary_phrase: str) -> tuple[str, ...]:
     """The alias phrases of a primary. For grammar matching only."""
     return _ALIASES.get(primary_phrase, ())
+
+
+_REPEAT_PRIMARIES: frozenset[str] = frozenset(row.phrases[0] for row in ROWS if row.repeat)
+
+
+def shown(phrase: str) -> str:
+    """The phrase as a table shows it. A repeat command gets (#), since a number can be said after it."""
+    return f"{phrase} (#)" if primary(phrase) in _REPEAT_PRIMARIES else phrase
 
 CLOSABLE: dict[str, str | tuple[str, ...]] = {
     phrase: row.keys for row in ROWS if row.wired and row.closes for phrase in row.phrases

@@ -18,9 +18,11 @@ from vosk import KaldiRecognizer, Model, SetLogLevel
 from app.bag import Bag, spoken_phrases
 from app.gspro_courses import course_phrases
 from app.gspro_screens import (
+    GROUP_GRAMMAR_NAMES,
     PANEL_GROUP_NAMES,
     RECORDS_BY_KEY,
     SCREEN_GROUP_NAMES,
+    grammar_groups_for,
     panel_group,
     DIALOG_GROUP,
     DIALOG_PHRASES,
@@ -40,6 +42,8 @@ from app.gspro_sequences import (
     SEQUENCES,
     current_screen,
     run_course_in_background,
+    MAP_SIZE_PHRASES,
+    set_map_size,
     toggle_map,
     sync_screen,
     run_in_background as run_gspro_sequence,
@@ -236,9 +240,9 @@ class VoiceListener(QObject):
         if panel is not None:
             wanted = {panel_group(panel)}  # an open panel replaces its screen's grammar until it closes
         elif screen is None:
-            wanted = set(SCREEN_GROUP_NAMES)
+            wanted = set(SCREEN_GROUP_NAMES) | set(GROUP_GRAMMAR_NAMES)
         elif screen in RECORDS_BY_KEY:
-            wanted = {screen_group(screen)}
+            wanted = {screen_group(screen)} | grammar_groups_for(screen)
         else:
             wanted = set()
         if self._dialog_open:
@@ -247,7 +251,7 @@ class VoiceListener(QObject):
             wanted = {GRID_GROUP}  # while the grid is showing, only its digit words listen, so club words cannot compete
         if wanted == self._screen_groups_on:
             return
-        every_group = set(SCREEN_GROUP_NAMES) | set(PANEL_GROUP_NAMES)
+        every_group = set(SCREEN_GROUP_NAMES) | set(PANEL_GROUP_NAMES) | set(GROUP_GRAMMAR_NAMES)
         for name in every_group | self._screen_groups_on | wanted:
             if (name in wanted) != (name in self._screen_groups_on):
                 rec.set_group(name, name in wanted)
@@ -468,7 +472,7 @@ class VoiceListener(QObject):
                             note = flight_mode_end()
                         else:
                             note = marker_move(phrase)
-                    elif phrase == "place ball":
+                    elif phrase == "place ball grid":
                         move = None
                         sent = False
                         label = "ball"
@@ -529,7 +533,7 @@ class VoiceListener(QObject):
                         move = None
                         sent = False  # no keys are sent; the note says what happened
                         release()
-                        label = "please start gspro"
+                        label = "gspro start"
                         note = start_play_golf(on_done=self.notice.emit)
                     elif phrase == "play course":
                         # On round settings, the course is already set up: press its PLAY. No name is needed.
@@ -552,13 +556,21 @@ class VoiceListener(QObject):
                         release()
                         label = phrase
                         note = sync_screen(SYNC_PHRASES[phrase])
-                    elif phrase in ("please exit golf", "confirm exit"):
-                        # Closing GSPro takes two steps: please exit golf, then confirm exit.
+                    elif phrase in MAP_SIZE_PHRASES:
+                        # Tells the app the mini map's size. No clicks, no keys.
                         move = None
                         sent = False
                         release()
                         label = phrase
-                        if phrase == "please exit golf":
+                        set_map_size(phrase)
+                        note = "Mini map set to " + ("large" if MAP_SIZE_PHRASES[phrase] else "small")
+                    elif phrase in ("gspro exit", "confirm exit"):
+                        # Closing GSPro takes two steps: gspro exit, then confirm exit.
+                        move = None
+                        sent = False
+                        release()
+                        label = phrase
+                        if phrase == "gspro exit":
                             note = request_exit(on_done=self.notice.emit)
                         else:
                             note = confirm_exit(on_done=self.notice.emit)
@@ -577,7 +589,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_START_PHRASES or phrase in FLIGHT_END_PHRASES or phrase in SLIDER_PHRASES or phrase in ("open commands", "close commands") or phrase in DIALOG_PHRASES or phrase in ("show grid", "hide grid", "place ball") or (self._grid_on and phrase in GRID_PHRASES):
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_START_PHRASES or phrase in FLIGHT_END_PHRASES or phrase in SLIDER_PHRASES or phrase in ("open commands", "close commands") or phrase in DIALOG_PHRASES or phrase in ("show grid", "hide grid", "place ball grid") or (self._grid_on and phrase in GRID_PHRASES):
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)

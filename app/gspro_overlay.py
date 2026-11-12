@@ -26,6 +26,7 @@ _timer: QTimer | None = None
 _status = ""
 _heard = ""
 _grammars: list[str] = []
+_hidden = False  # True while GSPro's interface is hidden (hide ui); both lines follow it
 
 
 def enabled() -> bool:
@@ -98,10 +99,18 @@ def _refresh_debug() -> None:
     _debug.show()
 
 
+def set_hidden(hidden: bool) -> None:
+    """Hide or show both lines with GSPro's own interface (hide ui and show ui)."""
+    global _hidden
+    _hidden = hidden
+    if _label is not None:
+        _refresh()
+
+
 def _refresh() -> None:
     if _label is None:
         return
-    if not _place():
+    if _hidden or not _place():
         _label.hide()
         _debug.hide()
         return
