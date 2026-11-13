@@ -78,6 +78,7 @@ END_ROUND_BUTTON = (0.903, 0.636)  # END ROUND at the bottom of the menu
 
 # Confirmation dialog (opens in the middle of the screen)
 CONFIRM_BUTTON = (0.443, 0.579)  # CONFIRM
+CANCEL_BUTTON = (0.556, 0.580)  # Cancel, beside CONFIRM; read from the confirm_panel.png screenshot
 
 # Watch areas: a sequence step waits for one of these to change after its click.
 # Each is (left, top, right, bottom) as fractions of the window.

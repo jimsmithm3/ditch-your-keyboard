@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.bag import spoken_phrases
+from app.gspro_courses import course_phrases
 from app.commands import ROWS, Command, key_text, primary, shown
 from app.gspro_screens import (
     DIALOG_GROUP,
@@ -205,7 +206,9 @@ def _group_column(group: str, spoken) -> tuple[str, list[str]]:
         return grammar_name(group), _primaries(GRID_PHRASES)
     if group == DIALOG_GROUP:
         return grammar_name(group), _primaries(DIALOG_PHRASES)
-    return grammar_name(group), []  # course names: they come from the course list at run time
+    if group == "courses":
+        return grammar_name(group), _primaries(course_phrases())  # cached, so cheap to read on each refresh
+    return grammar_name(group), []
 
 
 def _active_columns() -> list[tuple[str, list[str]]]:

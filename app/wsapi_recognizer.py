@@ -38,6 +38,7 @@ from System.Speech.Recognition import (  # noqa: E402
     RecognizeMode,
     SpeechHypothesizedEventArgs,
     SpeechRecognitionEngine,
+    SpeechRecognitionRejectedEventArgs,
     SpeechRecognizedEventArgs,
 )
 
@@ -62,8 +63,10 @@ class WsapiRecognizer:
         self._engine.SetInputToDefaultAudioDevice()
         self._on_recognized = EventHandler[SpeechRecognizedEventArgs](self._recognized)
         self._on_hypothesized = EventHandler[SpeechHypothesizedEventArgs](self._hypothesized)
+        self._on_rejected = EventHandler[SpeechRecognitionRejectedEventArgs](self._rejected)
         self._engine.SpeechRecognized += self._on_recognized
         self._engine.SpeechHypothesized += self._on_hypothesized
+        self._engine.SpeechRecognitionRejected += self._on_rejected
         self._engine.RecognizeAsync(RecognizeMode.Multiple)
         log.info("windows speech started: %s", self._engine.RecognizerInfo.Name)
 
@@ -88,6 +91,15 @@ class WsapiRecognizer:
             log.info("speech group %s %s", name, "on" if enabled else "off")
 
     # Windows speech thread
+    def _rejected(self, sender, event) -> None:
+        """Speech the engine heard but did not match to a phrase. Logged so a missed word can be seen."""
+        words = ""
+        try:
+            words = " ".join(str(w.Text) for w in event.Result.Words)
+        except Exception:
+            pass
+        log.info("wsapi rejected speech: %r (%.2f)", words or "?", float(event.Result.Confidence))
+
     def _recognized(self, sender, event) -> None:
         text = str(event.Result.Text).strip().lower()
         log.info("wsapi heard %s (%.2f)", text, float(event.Result.Confidence))

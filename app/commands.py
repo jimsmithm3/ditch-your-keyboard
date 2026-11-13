@@ -81,7 +81,9 @@ ROWS: tuple[Command, ...] = (
         "From the GSPro home screen, go straight to additional ranges (skips the practice screen)",
         area="Launch",
     ),
-    Command(("end round",), "", "From the GSPro range, open the menu and end the round", area="Launch"),
+    Command(("end round",), "", "Open the game menu and press END ROUND; then say confirm on the dialog", area="Launch"),
+    Command(("confirm",), "", "On the end round dialog: confirm, which ends the round", area="Launch"),
+    Command(("cancel",), "", "On the end round dialog: cancel, which closes the dialog and keeps the round", area="Launch"),
     Command(("back screen", "go back"), "", "Click BACK in the upper left of GSPro (say again for each level)", area="Launch"),  # primary, then aliases
     Command(("start screen",), "", "Click BACK until GSPro is at the home screen", area="Launch"),
     Command(("gspro exit", "gspro stop"), "", "Close GSpro and connectors (home screen; then say confirm exit)", area="Launch"),

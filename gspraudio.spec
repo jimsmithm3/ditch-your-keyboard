@@ -28,7 +28,7 @@ exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.datas,
+    a.datas,s
     [],
     name="gspraudio",
     debug=False,

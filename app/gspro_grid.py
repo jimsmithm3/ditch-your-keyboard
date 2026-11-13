@@ -40,6 +40,7 @@ _on_final: Callable[[float, float], None] | None = None
 
 
 COLUMN_SHADE = QColor(200, 200, 200, 40)  # a very light grey, see-through, for every other column
+CHECKER_SHADE = QColor(200, 200, 200, 150)  # the 4 by 4 checkerboard: less see-through, so it shows over the course
 
 
 def _draw_vertical(painter: QPainter, text: str, x: float, y: float, reads_down: bool) -> None:
@@ -94,12 +95,22 @@ class _Overlay(QWidget):
         painter.setFont(font)
         white = QColor(255, 255, 255, label_alpha)  # the labels, all white and semi-transparent
         painter.setPen(Qt.PenStyle.NoPen)
+        if self.level == 1:
+            # The 4 by 4 pass has no text: shaded cells in a checkerboard, so the cells can be seen through.
+            for col in range(cells):
+                for row in range(cells):
+                    if (col + row) % 2 == 0:
+                        painter.fillRect(
+                            int(x0 + cell_w * col), int(y0 + cell_h * row), int(cell_w), int(cell_h), CHECKER_SHADE
+                        )
+            painter.end()
+            return
         for i in range(0, cells, 2):  # every other column is shaded, so it is easy to tell which column you are in
             painter.fillRect(int(x0 + cell_w * i), int(y0), int(cell_w), int(h), COLUMN_SHADE)
         painter.setPen(white)
         metrics = painter.fontMetrics()
         for i in range(cells):
-            label = GRID_WORDS[i] if self.level == 0 else GRID_LABELS[i]  # full NATO words on the 26 by 26 pass
+            label = GRID_WORDS[i]  # full NATO words on the 26 by 26 pass
             text_w = metrics.horizontalAdvance(label)
             # Rows count up from the bottom, like a 0,0 origin: alpha (row 0) is the bottom row.
             row_y = int(y0 + cell_h * (cells - 1 - i) + cell_h / 2 + 6)

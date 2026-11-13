@@ -2,6 +2,9 @@ import socket
 import json
 
 
+REPLY_TIMEOUT_SECONDS = 5.0  # how long to wait for the connector's reply before giving up
+
+
 def fire_gspro_tcp_shot():
     # Target localhost Open Connect API port
     GSPRO_IP = "127.0.0.1"
@@ -40,6 +43,9 @@ def fire_gspro_tcp_shot():
     try:
         # FIX: Using socket.SOCK_STREAM to establish a proper TCP link
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            # A timeout, so the script cannot hang waiting for a reply. Ctrl+C does not interrupt a blocked
+            # socket call on Windows, so the timeout is the way out.
+            sock.settimeout(REPLY_TIMEOUT_SECONDS)
             print(f"[*] Attempting TCP connection to GSPro Connect on port {GSPRO_PORT}...")
             sock.connect((GSPRO_IP, GSPRO_PORT))
 
@@ -49,9 +55,15 @@ def fire_gspro_tcp_shot():
             print("[+] Payload transmitted successfully!")
 
             # Read the confirmation response code directly from the API connector
-            raw_response = sock.recv(2048)
+            try:
+                raw_response = sock.recv(2048)
+            except socket.timeout:
+                print(f"[!] No reply within {REPLY_TIMEOUT_SECONDS:.0f} seconds; stopping. The shot was sent.")
+                return
             if raw_response:
                 print(f"[+] API Connector Feedback: {raw_response.decode('utf-8')}")
+            else:
+                print("[!] The connector closed the connection without a reply.")
 
     except Exception as e:
         print(f"[!] Connection failed: {e}")

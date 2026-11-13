@@ -42,7 +42,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Back": ("back screen",),
     "Range": ("open preferences", "close preferences", "change driving range distance"),  # GSPro Range only: the driving range panel (see PANELS); close is here too, so it is heard after the panel memory drifts
     "Tabs": ("players tab", "match tab", "holes tab"),  # round settings: the three tabs along the top
-    "Course list": ("show favorites", "show installed", "clear course"),
+    "Course chooser": ("show favorites", "show installed", "clear course"),
     # "sync to <screen>": on every screen (see SCREEN_WIDE_GROUPS), not while a panel is open
     "Sync": tuple(SYNC_PHRASES),
     "Aim": (
@@ -58,7 +58,6 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "View": (
         "flyover",
         "heat map",
-        "scorecard",
         "close",
         "green grid",
         "pin indicator",
@@ -175,7 +174,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "Local match",
         "home",
         trans=(Trans("play <course>", "round_settings_play", "play course"),),
-        groups=("Back", "Course list"),
+        groups=("Back", "Course chooser"),
         note="course chooser",
     ),
     Screen(
@@ -198,7 +197,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "On course practice",
         "practice",
         trans=(Trans("play <course>", "round_settings_practice", "play course"),),
-        groups=("Back", "Course list"),
+        groups=("Back", "Course chooser"),
         note="course chooser",
     ),
     Screen(
@@ -206,7 +205,7 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "Additional Driving Ranges",
         "practice",
         trans=(Trans("play <range name>", "driving_range", "play course"),),
-        groups=("Back", "Course list"),
+        groups=("Back", "Course chooser"),
         note="range chooser",
     ),
     Screen("driving_range", "Additional Range", "additional", groups=("hitting_range",), note="hit balls"),
@@ -241,7 +240,14 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         ),
         groups=("Back", "Tabs"),
     ),
-    Screen("play", "Course play", "round_settings_play", groups=("Aim", "View", "hitting_base", "hitting_course"), note="hit balls"),
+    Screen(
+        "play",
+        "Course play",
+        "round_settings_play",
+        groups=("Aim", "View", "hitting_base", "hitting_course"),
+        phrases=("scorecard",),  # course play only, not course practice
+        note="hit balls",
+    ),
 )
 
 RECORDS_BY_KEY = {screen.key: screen for screen in SCREEN_RECORDS}
@@ -303,6 +309,8 @@ PANELS: dict[str, tuple[str, ...]] = {
         "stop",
         *DIGIT_KEYS,
     ),
+    # The dialog that opens when END ROUND is pressed: it waits for confirm (cancel is not wired yet).
+    "end_round_confirm": ("confirm", "cancel"),
 }
 
 
@@ -312,8 +320,16 @@ def panel_group(key: str) -> str:
 
 
 PANEL_GROUP_NAMES: tuple[str, ...] = tuple(panel_group(key) for key in PANELS)
-PANEL_NAMES: dict[str, str] = {"driving_preferences_panel": "Driving Preferences"}  # what the tree box says
-PANEL_PARENTS: dict[str, str] = {"driving_preferences_panel": "range"}  # the screen the panel opens on
+PANEL_NAMES: dict[str, str] = {
+    "driving_preferences_panel": "Driving Preferences",
+    "end_round_confirm": "End round confirm",
+}  # what the tree box says
+PANEL_PARENTS: dict[str, str] = {
+    "driving_preferences_panel": "range",
+    "end_round_confirm": "play",  # where its box sits in the tree; it opens from several screens (see PANEL_SCREEN_ONLY)
+}
+# Panels that close when the app is on another screen. Others stay open wherever they were opened.
+PANEL_SCREEN_ONLY: dict[str, str] = {"driving_preferences_panel": "range"}
 
 
 def screen_phrases(key: str) -> tuple[str, ...]:

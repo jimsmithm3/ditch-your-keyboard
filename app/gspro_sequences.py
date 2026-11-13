@@ -23,12 +23,14 @@ from app.clicks import HOVER_SECONDS, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, 
 from app.prefs import get_pref, set_bool
 from app.connector_ui import _point, _rect, find_window
 from app.focus import _force_foreground
+from app.gspro_screens import PANEL_SCREEN_ONLY
 from app.gspro_ui import (
     BACK_BUTTON,
     CLEAR_SEARCH_CLICK,
     ADDITIONAL_CARD,
     COURSE_LIST_WATCH,
     LOCAL_CARD,
+    CANCEL_BUTTON,
     CONFIRM_BUTTON,
     END_ROUND_BUTTON,
     EXIT_BUTTON,
@@ -92,7 +94,7 @@ SCREEN_AFTER: dict[str, str] = {
     "additional ranges now": "additional",
     "gspro practice range": "range",
     "start screen": "home",
-    "end round": "home",  # a shortcut back to the home screen
+    "confirm": "home",  # the end round dialog's CONFIRM goes back to the home screen
     "gspro exit": CLOSED,
     "on course practice": "on_course",
     "additional ranges": "additional",
@@ -638,10 +640,16 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     "show installed": (Step("INSTALLED", FILTER_INSTALLED),),
     "show menu": (Step("GAME MENU", MENU_BUTTON),),
     "cancel menu": (Step("CANCEL MENU", MENU_CLOSE),),
+    # End round is two steps: this one opens the confirm dialog, and "confirm" (below) answers it.
     "end round": (
         Step("GAME MENU", MENU_BUTTON, WATCH_MENU),
         Step("END ROUND", END_ROUND_BUTTON, WATCH_DIALOG),
-        Step("CONFIRM", CONFIRM_BUTTON, WATCH_DIALOG),
+    ),
+    "confirm": (Step("CONFIRM", CONFIRM_BUTTON, WATCH_DIALOG),),  # on the end round dialog only
+    # On the end round dialog: closes the dialog, then the game menu through its upper-right X.
+    "cancel": (
+        Step("CANCEL", CANCEL_BUTTON, WATCH_DIALOG),
+        Step("CLOSE MENU", MENU_CLOSE, WATCH_MENU),
     ),
 }
 
@@ -707,8 +715,8 @@ SAME_SCREEN_SEQUENCES = (
     "change shots per fifteen",
 )
 # Panels: the sequence that opens each panel, and the sequences that close the panel that is open.
-PANEL_OPENERS: dict[str, str] = {"open preferences": "driving_preferences_panel"}
-PANEL_CLOSERS: tuple[str, ...] = ("apply", "close preferences")
+PANEL_OPENERS: dict[str, str] = {"open preferences": "driving_preferences_panel", "end round": "end_round_confirm"}
+PANEL_CLOSERS: tuple[str, ...] = ("apply", "close preferences", "confirm", "cancel")
 _panel: str | None = None  # the panel open right now; its grammar is the one listened for
 
 
@@ -716,16 +724,23 @@ def current_panel() -> str | None:
     return _panel
 
 
+START_WAITING_NOTE = "start screen: waiting for confirm (say confirm)"  # start screen from the range or a course
+
+
 def _remember_panel(name: str, note: str) -> None:
     global _panel
+    if name == "start screen" and note == START_WAITING_NOTE:
+        _panel = PANEL_OPENERS["end round"]  # the end round dialog is open, so its panel listens
+        return
     if not note.endswith(": done"):
         return
     if name in PANEL_OPENERS:
         _panel = PANEL_OPENERS[name]
     elif name in PANEL_CLOSERS:
         _panel = None
-    if _screen != "range":
-        _panel = None  # panels belong to the screen they open on
+    only_on = PANEL_SCREEN_ONLY.get(_panel) if _panel else None
+    if only_on is not None and _screen != only_on:
+        _panel = None  # a panel that belongs to one screen closes when the app is on another
 # Screens with the course map and its marker commands: course play, and course practice (a real course).
 COURSE_PLAY_SCREENS = ("play", "course_practice")
 
@@ -1016,13 +1031,19 @@ def _run(name: str) -> str:
     if name == "gspro exit" and _screen != "home":
         # EXIT is only on the home screen, so get there first with the same routine as "home screen".
         home = _run("start screen")
+        if home == START_WAITING_NOTE:  # from the range or a course, the end round dialog must be answered first
+            return f"{name}: say confirm to end the round first, then say {name} again"
         if not (home.endswith(": done") or "at home" in home or "nothing to go back" in home):
             return f"{name}: could not get to the home screen first ({home})"
         _screen = "home"
     # Home is not skipped even when the memory says home: a screen we did not track may
     # have a BACK button, and on a real home screen the first BACK click does nothing.
     if name == "start screen" and _screen in ("range", "play", "course_practice", "driving_range"):
-        name = "end round"  # from the range or a course, going home is ending the round
+        # From the range or a course, going home is ending the round: the menu and END ROUND, then confirm.
+        ended = _run("end round")
+        if not ended.endswith(": done"):
+            return ended
+        return START_WAITING_NOTE  # the end round dialog is open; the panel waits for confirm
     steps = SEQUENCES[name]
     if name == "marker place":
         marker_stop()  # a moving marker stops before it is placed
