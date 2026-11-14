@@ -191,7 +191,7 @@ def _primaries(phrases) -> list[str]:
     for phrase in phrases:
         if primary(phrase) == phrase and shown(phrase) not in names:
             names.append(shown(phrase))
-    return names
+    return sorted(names, key=str.lower)  # alphabetical, so a phrase is easy to find
 
 
 def _group_column(group: str, spoken) -> tuple[str, list[str]]:

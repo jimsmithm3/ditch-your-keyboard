@@ -77,9 +77,9 @@ Do not send a test shot into a live round. The socket is shot data in, and repli
 - `app/players.py` / `app/player_dialog.py` — local players and bags
 - `app/gspro_bag.py` / `app/gspro_bag_dialog.py` — locker bags and shortcut edit
 - `app/focus.py` — one focus before keys
-- `app/connector_ui.py` — after "please play golf" starts the apps, clicks SQG-GSPRO-Connect's Scan and Connect (LM) and Connect (GSPro) in the background. It has no accessibility tree or native controls, so it clicks at fixed fractions of the window, and it reads the status lights from screen pixels. It clicks a button only when its light is not green. Layout positions are in the constants at the top. If the window layout changes, these need updating
+- `app/connector_ui.py` — after "gspro start" starts the apps, clicks SQG-GSPRO-Connect's Scan and Connect (LM) and Connect (GSPro) in the background. It has no accessibility tree or native controls, so it clicks at fixed fractions of the window, and it reads the status lights from screen pixels. It clicks a button only when its light is not green. Layout positions are in the constants at the top. If the window layout changes, these need updating
 - `app/overview_page.py` — first page in the list, opened at startup, for the OBS floor display. Three circles: launch monitor connected, GSPro connected (both from the connector's status lights), connector running (process check). Shows the last command and last heard phrase. Voice commands also run on this page
-- `app/launch.py` — "please play golf" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
+- `app/launch.py` — "gspro start" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
 - `app/main_window.py` — player, bag summary, status bar, buttons
 - `resources/gspro_clubs.json` — GSPro club enum
 - `gspraudio.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`

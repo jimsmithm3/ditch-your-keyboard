@@ -11,6 +11,8 @@ log = logging.getLogger(__name__)
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
+GSPRO_WINDOW_TITLE = "GSPro"  # the window title GSPro itself uses; same text as gspro_ui.GSPRO_TITLE
+
 # Test mode (Developer page) turns this off so a minimized GSPro stays minimized.
 _restore_minimized = True
 
@@ -23,15 +25,10 @@ def set_restore_minimized(flag: bool) -> None:
 def prepare_gspro() -> str | None:
     """Focus GSPro. None means it is in front. Otherwise a short reason."""
     try:
-        # Title must START with "gspro". A plain substring match also hit this
-        # app's own terminal ("◑ Caudio audio input for GSPro") and sent the
-        # club keys into it. The Open Connect window "SQG-GSPRO-Connect" is
-        # excluded by the same rule.
-        windows = [
-            win
-            for win in gw.getAllWindows()
-            if (win.title or "").lower().startswith("gspro")
-        ]
+        # The title must be exactly "GSPro". A browser tab whose page title starts with "gspro" (for example
+        # "gspro shotcam ... - Google Chrome") and this app's own windows were getting the keys. find_window in
+        # connector_ui matches the same exact title.
+        windows = [win for win in gw.getAllWindows() if (win.title or "") == GSPRO_WINDOW_TITLE]
     except Exception:
         log.exception("could not list windows")
         return "could not list windows"
@@ -55,10 +52,10 @@ def prepare_gspro() -> str | None:
 
 
 def gspro_in_front() -> bool:
-    """True when the window in front is GSPro (same title rule as prepare_gspro)."""
+    """True when the window in front is GSPro (same exact title rule as prepare_gspro)."""
     buf = ctypes.create_unicode_buffer(256)
     _user32.GetWindowTextW(_user32.GetForegroundWindow(), buf, 256)
-    return buf.value.lower().startswith("gspro")
+    return buf.value == GSPRO_WINDOW_TITLE
 
 
 def ensure_gspro() -> str | None:

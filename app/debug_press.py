@@ -15,7 +15,7 @@ from typing import Callable
 
 from app import clicks
 from app.clicks import MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE
-from app.connector_ui import _point, _rect, find_window
+from app.connector_ui import _point, client_rect, find_window
 from app.focus import _force_foreground
 from app.gspro_ui import GSPRO_TITLE, RANGE_CARD
 
@@ -98,7 +98,7 @@ def _run_case(index: int) -> str:
         if not _force_foreground(hwnd):
             return "could not bring GSPro to the front; not pressed"
 
-        x, y = _point(_rect(hwnd), RANGE_CARD)
+        x, y = _point(client_rect(hwnd), RANGE_CARD)
         log.info(
             "debug press case %d/%d: %s | target (%d,%d) rect %s front=%r",
             index + 1,
@@ -106,7 +106,7 @@ def _run_case(index: int) -> str:
             name,
             x,
             y,
-            _rect(hwnd),
+            client_rect(hwnd),
             clicks._front_title(),
         )
         press(x, y)

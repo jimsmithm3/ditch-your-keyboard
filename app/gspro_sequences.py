@@ -21,7 +21,7 @@ from typing import Callable
 
 from app.clicks import HOVER_SECONDS, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, PRESS_SECONDS, _send, click
 from app.prefs import get_pref, set_bool
-from app.connector_ui import _point, _rect, find_window
+from app.connector_ui import _point, client_rect, find_window
 from app.focus import _force_foreground
 from app.gspro_screens import PANEL_SCREEN_ONLY
 from app.gspro_ui import (
@@ -153,6 +153,10 @@ def set_map_size(phrase: str) -> None:
     _map_expanded = MAP_SIZE_PHRASES[phrase]
 
 
+def ui_hidden() -> bool:
+    return _ui_hidden
+
+
 def set_ui_hidden(hidden: bool) -> None:
     global _ui_hidden
     _ui_hidden = hidden
@@ -174,9 +178,8 @@ MARKER_DIRECTIONS: dict[str, tuple[int, int]] = {
 }
 # Voice phrases for the two course-screen modes. Map mode holds the mouse button; free flight
 # mode is F5 in GSPro.
-MAP_MODE_PHRASES = ("map mode start", "map mode end")
-FLIGHT_START_PHRASES = ("free flight mode start", "flight mode start")
-FLIGHT_END_PHRASES = ("free flight mode end", "flight mode end")
+MAP_MODE_PHRASES = ()  # map mode start and end were removed: the grid does the map work now
+FLIGHT_TOGGLE_PHRASES = ("toggle free flight", "toggle flight")  # one phrase: F5 turns it on, then off
 
 _marker_offset: tuple[float, float] = (0.0, 0.0)
 _marker_direction: tuple[int, int] | None = None
@@ -251,7 +254,7 @@ def marker_start() -> str:
     if not _force_foreground(hwnd):
         return "could not bring GSPro to the front; not started"
     _show_interface()
-    x, y = _point(_rect(hwnd), _marker_point())
+    x, y = _point(client_rect(hwnd), _marker_point())
     _send(MOUSEEVENTF_MOVE, x, y)
     time.sleep(HOVER_SECONDS)
     _send(MOUSEEVENTF_LEFTDOWN, x, y)  # held until map mode end
@@ -298,23 +301,24 @@ def flight_mode_start() -> str:
     global _flight_mode
     if _screen not in COURSE_PLAY_SCREENS:
         return "free flight mode: say play screen and now first"
-    if _flight_mode:
-        return "Already in free flight mode; say free flight mode end to leave"
     if not _press_f5():
         return "could not bring GSPro to the front; not started"
     _flight_mode = True
-    return "Free flight mode on; say free flight mode end to leave"
+    return "Free flight mode on; say toggle free flight to leave"
 
 
 def flight_mode_end() -> str:
     """F5 again turns free flight off in GSPro. Assumes F5 is the toggle."""
     global _flight_mode
-    if not _flight_mode:
-        return "Not in free flight mode"
     if not _press_f5():
         return "could not bring GSPro to the front; free flight mode still on"
     _flight_mode = False
     return "Free flight mode off"
+
+
+def flight_mode_toggle() -> str:
+    """Free flight on if it is off, off if it is on. The app's flag follows what it last sent."""
+    return flight_mode_end() if _flight_mode else flight_mode_start()
 
 
 def _release_on_exit() -> None:
@@ -360,7 +364,7 @@ def _aim_marker_now() -> None:
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return
-    _send(MOUSEEVENTF_MOVE, *_point(_rect(hwnd), _marker_point()))
+    _send(MOUSEEVENTF_MOVE, *_point(client_rect(hwnd), _marker_point()))
 
 
 def marker_stop() -> str:
@@ -436,7 +440,7 @@ def slider_start(name: str) -> str:
         return "could not bring GSPro to the front; not started"
     _show_interface()
     global _slider_low, _slider_step
-    rect = _rect(hwnd)
+    rect = client_rect(hwnd)
     spec = SLIDER_PHRASES[name]
     if spec is None:
         # slide left / right: start where the pointer is, and move at a sixth of the slider speed
@@ -473,7 +477,7 @@ def _slider_loop() -> None:
         hwnd = find_window(GSPRO_TITLE)
         if hwnd is None:
             break
-        rect = _rect(hwnd)
+        rect = client_rect(hwnd)
         _slider_x = min(max(_slider_x + _slider_step, _slider_low), _slider_right)  # holds at the end until stop
         _slider_history.append((time.monotonic(), _slider_x))
         _send(MOUSEEVENTF_MOVE, *_point(rect, (_slider_x, _slider_y)))
@@ -481,7 +485,7 @@ def _slider_loop() -> None:
     # Ended without "stop" (panel closed, GSPro gone): let go so the button is not left down.
     hwnd = find_window(GSPRO_TITLE)
     if _slider_down and hwnd is not None:
-        _release_slider_button(*_point(_rect(hwnd), (_slider_x, _slider_y)))
+        _release_slider_button(*_point(client_rect(hwnd), (_slider_x, _slider_y)))
     elif _slider_down:
         _release_slider_button(*_cursor_pixel())
 
@@ -518,7 +522,7 @@ def slider_stop() -> str:
     if hwnd is None:
         _release_slider_button(*_cursor_pixel())
         return f"{name}: GSPro window not found; button released where it is"
-    x, y = _point(_rect(hwnd), (rewound, _slider_y))
+    x, y = _point(client_rect(hwnd), (rewound, _slider_y))
     _send(MOUSEEVENTF_MOVE, x, y)
     _release_slider_button(x, y)
     click(x, y, f"{name} reset click")  # a click where the drag ended resets the marker, as GSPro expects
@@ -542,7 +546,7 @@ def _marker_loop() -> None:
         hwnd = find_window(GSPRO_TITLE)
         if hwnd is None:
             break
-        rect = _rect(hwnd)
+        rect = client_rect(hwnd)
         # The window is wider than it is tall, so the same fraction of the width is more pixels
         # than of the height. Scale the sideways step so both directions move the same distance.
         aspect = (rect[3] - rect[1]) / max(rect[2] - rect[0], 1)
@@ -635,7 +639,7 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     "change shots per ten": (Step("SHOTS 10", SHOTS_10),),
     "change shots per fifteen": (Step("SHOTS 15", SHOTS_15),),
     "marker place": (Step("MARKER", MAP_SMALL_CENTER),),
-    "clear course": (Step("CLEAR SEARCH", CLEAR_SEARCH_CLICK, key="backspace"),),
+    "clear filter": (Step("CLEAR SEARCH", CLEAR_SEARCH_CLICK, key="backspace"),),
     "show favorites": (Step("FAVORITES", FILTER_FAVORITES),),
     "show installed": (Step("INSTALLED", FILTER_INSTALLED),),
     "show menu": (Step("GAME MENU", MENU_BUTTON),),
@@ -698,7 +702,7 @@ ROUND_SETTINGS_SCREENS = ("round_settings_practice", "round_settings_play")
 SAME_SCREEN_SEQUENCES = (
     "show favorites",
     "show installed",
-    "clear course",
+    "clear filter",
     "show menu",
     "cancel menu",
     "open preferences",
@@ -761,10 +765,10 @@ def _wait_until_still(hwnd: int, box) -> float | None:
 
     set_working("waiting for the screen to settle")
     started = time.monotonic()
-    before = _watch_grid(_rect(hwnd), box)
+    before = _watch_grid(client_rect(hwnd), box)
     while time.monotonic() - started < QUIET_TIMEOUT:
         time.sleep(QUIET_SECONDS)
-        now = _watch_grid(_rect(hwnd), box)
+        now = _watch_grid(client_rect(hwnd), box)
         if sum(abs(a - b) for a, b in zip(before, now)) / len(before) < CHANGE_LEVEL:
             return time.monotonic() - started
         before = now
@@ -779,7 +783,7 @@ def _wait_for_change(hwnd: int, box, before: list[float], timeout: float = CHANG
     started = time.monotonic()
     while time.monotonic() - started < timeout:
         time.sleep(POLL_SECONDS)
-        now = _watch_grid(_rect(hwnd), box)
+        now = _watch_grid(client_rect(hwnd), box)
         difference = sum(abs(a - b) for a, b in zip(before, now)) / len(before)
         if difference > CHANGE_LEVEL:
             return time.monotonic() - started
@@ -791,7 +795,7 @@ def _click_until_still(hwnd: int, name: str, step: Step) -> str:
     for count in range(1, step.repeat + 1):
         if not _force_foreground(hwnd):
             return f"{name}: lost GSPro focus; stopped"
-        rect = _rect(hwnd)
+        rect = client_rect(hwnd)
         before = _watch_grid(rect, step.watch)
         click(*_point(rect, step.target), f"{name} {step.label} click {count}")
         if _wait_for_change(hwnd, step.watch, before, step.wait) is None:
@@ -849,7 +853,7 @@ def _clear_course_filter(hwnd: int) -> None:
     from app.progress import set_working
 
     set_working("clearing the course search")
-    click(*_point(_rect(hwnd), CLEAR_SEARCH_CLICK), "clear course search: first letter")
+    click(*_point(client_rect(hwnd), CLEAR_SEARCH_CLICK), "clear course search: first letter")
     pydirectinput.press("backspace")
 
 
@@ -863,7 +867,7 @@ def _play_course(text: str) -> str:
         if hwnd is None or not _force_foreground(hwnd):
             return "could not bring GSPro to the front; not clicked"
         _show_interface()
-        click(*_point(_rect(hwnd), ROUND_PLAY), "play course: round settings PLAY")
+        click(*_point(client_rect(hwnd), ROUND_PLAY), "play course: round settings PLAY")
         _screen = "course_practice" if _screen == "round_settings_practice" else "play"
         return "play course: done"
     if _screen not in COURSE_LIST_SCREENS:
@@ -879,7 +883,7 @@ def _play_course(text: str) -> str:
     import pydirectinput
 
     _clear_course_filter(hwnd)
-    click(*_point(_rect(hwnd), SEARCH_BOX), f"play course {text}: search box")
+    click(*_point(client_rect(hwnd), SEARCH_BOX), f"play course {text}: search box")
     typed_at = time.monotonic()
     for character in text:
         if character == " ":
@@ -889,8 +893,8 @@ def _play_course(text: str) -> str:
         time.sleep(TYPE_GAP_SECONDS)
     log.info("play course %s: typed in %.1f s", text, time.monotonic() - typed_at)
     time.sleep(FILTER_SETTLE_SECONDS)  # the list filters almost at once; no long wait needed
-    before_click = _watch_grid(_rect(hwnd), COURSE_LIST_WATCH)
-    click(*_point(_rect(hwnd), FIRST_PLAY), f"play course {text}: first row Play")
+    before_click = _watch_grid(client_rect(hwnd), COURSE_LIST_WATCH)
+    click(*_point(client_rect(hwnd), FIRST_PLAY), f"play course {text}: first row Play")
     # Round settings may not change the list area's brightness much, so this wait is short.
     if _wait_for_change(hwnd, COURSE_LIST_WATCH, before_click, timeout=PLAY_CHANGE_SECONDS) is None:
         log.info("play course %s: list area did not change after Play; going on", text)
@@ -905,6 +909,31 @@ def _play_course(text: str) -> str:
         _screen = "round_settings_play" if source == "local_match" else "round_settings_practice"
     set_bool("tree.done:play course", True)
     return f"play course {text}: done"
+
+
+def after_row_play(then_now: bool) -> str:
+    """After a course row's Play is clicked on On course practice, GSPro opens round settings. Wait for it, record
+    that screen, and if then_now, press its PLAY so the round starts (same as "play <name> now")."""
+    global _screen
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return "GSPro window not found"
+    with _lock:
+        try:
+            if _wait_until_still(hwnd, HOME_WATCH) is None:
+                log.warning("play row: round settings kept moving")
+            time.sleep(ROUND_SETTLE_SECONDS)  # round settings load quickly; same settle as "play course"
+            _screen = "round_settings_practice"  # a row Play on On course practice always opens this one
+            if not then_now:
+                return "round settings open"
+            later = _run("now")
+            _remember_screen("now", later)
+        finally:
+            from app.progress import clear as clear_working
+
+            clear_working()
+    log.info("play row now: %s", later)
+    return later
 
 
 def run_in_background(name: str, on_done: Callable[[str], None] | None = None) -> str:
@@ -1012,7 +1041,7 @@ def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
         return "GSPro is not running. Say gspro start."
-    if name in ("show favorites", "show installed", "clear course") and _screen not in COURSE_LIST_SCREENS:
+    if name in ("show favorites", "show installed", "clear filter") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:
         return "now: say play course and the course name first"
@@ -1065,7 +1094,7 @@ def _run(name: str) -> str:
         pydirectinput.press("enter")
         time.sleep(0.3)
 
-    log.info("%s: start, %d step(s), window rect %s", name, len(steps), _rect(hwnd))
+    log.info("%s: start, %d step(s), window rect %s", name, len(steps), client_rect(hwnd))
     started = time.monotonic()
     for number, step in enumerate(steps, start=1):
         if step.repeat > 1:
@@ -1076,7 +1105,7 @@ def _run(name: str) -> str:
             if _wait_until_still(hwnd, step.quiet) is None:
                 log.warning("%s: %s area kept moving for %.0f s; clicking anyway", name, step.label, QUIET_TIMEOUT)
             time.sleep(_settle_floor(short=step.settle == "short"))  # a pause after it looks still, so the screen finishes loading
-        rect = _rect(hwnd)
+        rect = client_rect(hwnd)
         before = _watch_grid(rect, step.watch) if step.watch is not None else None
         if step.click:
             click(*_point(rect, step.target), f"{name} step {number} {step.label}")

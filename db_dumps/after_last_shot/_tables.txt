@@ -1,0 +1,15 @@
+CourseRepo	0 rows	2 columns
+CourseRepoCourse	36 rows	77 columns
+CourseRoundSettings	14 rows	5 columns
+DrivingRangeShot	3 rows	3 columns
+LastShot	1 rows	3 columns
+LockerBag	1 rows	3 columns
+Operation36Player	0 rows	3 columns
+Operation36PlayerRound	0 rows	7 columns
+PlayerBag	0 rows	3 columns
+Round	70 rows	14 columns
+Settings	1 rows	4 columns
+StateSettings	1 rows	2 columns
+UserDefinedCourseList	1 rows	2 columns
+UserDefinedCourseListToCourse	0 rows	3 columns
+sqlite_sequence	9 rows	2 columns

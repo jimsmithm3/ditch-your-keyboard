@@ -10,7 +10,7 @@ from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QLabel
 
-from app.connector_ui import _rect, find_window
+from app.connector_ui import client_rect, find_window
 from app.gspro_ui import GSPRO_TITLE
 from app.prefs import get_pref
 
@@ -79,7 +79,7 @@ def _place() -> bool:
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return False
-    left, _top, right, bottom = _rect(hwnd)  # physical pixels
+    left, _top, right, bottom = client_rect(hwnd)  # physical pixels
     screen = QGuiApplication.screenAt(QPoint(left, bottom)) or QGuiApplication.primaryScreen()
     ratio = screen.devicePixelRatio() or 1.0
     centre_x = (left + right) / 2 / ratio

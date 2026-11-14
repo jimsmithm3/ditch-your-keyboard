@@ -117,6 +117,9 @@ class Bag:
             if not self._names:
                 self._names = load_bag_names()
         self.index = 0
+        # False until a club has been called: GSPro may be on any club until then, so the first one goes via
+        # the putter (see apply), which is the one club GSPro's keys set exactly.
+        self._synced = False
         self._phrase_index = self._indexes()
 
     def reload(self) -> None:
@@ -166,11 +169,39 @@ class Bag:
                 return Move([], "not in bag")
             target = self._phrase_index[phrase]
             if self._names[target] == "Putter":
+                self._synced = True
                 return self._putter(target)
+            if not self._synced:
+                self._synced = True
+                return self._first_call(target)
             if target == self.index:
                 return self._realign(target)
             return self._go(target)
-        return None  # club up and club down are plain keystrokes (see the Club rows in commands.py)
+        if phrase in ("club up", "club down"):
+            return self._step(+1 if phrase == "club up" else -1)  # club up is toward the putter: the next index
+        return None
+
+    def _step(self, delta: int) -> Move:
+        """One club toward the putter (delta +1) or the driver (-1). Until a club has been called, GSPro may be on
+        any club, so the putter comes first (as with a named club), then the step from there."""
+        last = len(self._names) - 1
+        if not self._synced:
+            self._synced = True
+            putter = self._names.index("Putter") if "Putter" in self._names else last
+            start = putter  # U leaves GSPro on the putter, whatever it was on
+            keys = [PUTT]
+        else:
+            start = self.index
+            keys = []
+        new = min(max(start + delta, 0), last)
+        self.index = new
+        if new > start:
+            keys += [CLUB_UP] * (new - start)
+        elif new < start:
+            keys += [CLUB_DOWN] * (start - new)
+        if not keys:
+            return Move([], f"already at {self.club}, the {'putter' if delta > 0 else 'driver'} end")
+        return Move(keys, _detail(keys))
 
     def _indexes(self) -> dict[str, int]:
         phrases_for = {club.name: club.phrases for club in CATALOG}
@@ -200,6 +231,19 @@ class Bag:
             keys = []
         if not keys:
             return Move([], f"already on {self.club}")
+        return Move(keys, _detail(keys))
+
+    def _first_call(self, target: int) -> Move:
+        """The first club called: GSPro may be on any club, so press Putter (U) to know where it is, then walk
+        down to the club called. With no putter in the bag, the walk goes from the top of the bag."""
+        putter = self._names.index("Putter") if "Putter" in self._names else -1
+        if putter < 0:
+            downs = [CLUB_DOWN] * len(self._names)
+            ups = [CLUB_UP] * target
+            self.index = target
+            return Move(downs + ups, _detail(downs + ups))
+        keys = [PUTT] + [CLUB_DOWN] * (putter - target)
+        self.index = target
         return Move(keys, _detail(keys))
 
     def _realign(self, target: int) -> Move:

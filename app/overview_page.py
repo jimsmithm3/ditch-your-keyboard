@@ -108,7 +108,7 @@ class OverviewPage(QWidget):
         listener.mode.connect(self._on_mode)
 
     def _on_mode(self, on: bool) -> None:
-        self._mode.setText("Voice: listening" if on else "Voice: PAUSED. Say start listening.")
+        self._mode.setText("Voice: listening" if on else "Voice: PAUSED. Say toggle listening.")
         self._mode.setStyleSheet("font-size: 22px; font-weight: bold; color: " + ("#2e7d32;" if on else "#c62828;"))
 
     def _poll(self) -> None:

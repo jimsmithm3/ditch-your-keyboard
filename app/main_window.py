@@ -15,7 +15,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import course_chooser
 from app.bag_dialog import edit_bag
+from app.gspro_settings import read_map_side
 from app.listener import VoiceListener
 from app.mic_page import MicSetupPage
 from app.prefs_page import PrefsPage, saved_offset, send_keys_default
@@ -67,7 +69,9 @@ class MainWindow:
             return
         self._show_player()
 
+        read_map_side()  # once at startup: which side GSPro's mini map is on, for the grid
         self.listener = VoiceListener(spl_offset=saved_offset())
+        course_chooser.on_download_done(self.listener.use_courses)
         self._mic_page.attach(self.listener)
         self.listener.use_page(self.shell.current_title())
         self.shell.widget("Overview").attach(self.listener)
@@ -79,6 +83,7 @@ class MainWindow:
         self.listener.notice.connect(self._on_notice)
         self.listener.available.connect(self._on_available)
         self.listener.grid.connect(self._on_grid)
+        self.listener.legend.connect(self._on_legend)
         self.listener.grammars.connect(self._on_grammars)
         self.listener.club.connect(self._on_club)
         self._on_club(self.listener.bag.club)
@@ -206,6 +211,11 @@ class MainWindow:
         from app.gspro_grid import handle
 
         handle(event)
+
+    def _on_legend(self, state: object) -> None:
+        from app.gspro_legend import apply
+
+        apply(state)
 
     def _on_available(self, action: str) -> None:
         from app.available_dialog import show_available

@@ -44,6 +44,16 @@ def _read_gspro_names() -> list[str]:
         con.close()
 
 
+def gspro_course_count() -> int:
+    """How many rows GSPro's course table has now. A download adds one row when it finishes, so the count going
+    up by one is how the app knows the download is done. Read-only. Raises sqlite3.Error if the database is busy."""
+    con = sqlite3.connect(f"file:{GSPRO_DB.as_posix()}?mode=ro", uri=True)
+    try:
+        return int(con.execute("SELECT COUNT(*) FROM CourseRepoCourse").fetchone()[0])
+    finally:
+        con.close()
+
+
 def sync_from_gspro() -> int:
     """Replace our course list with GSPro's. Returns how many courses were saved.
     Raises sqlite3.Error if GSPro's database can't be read."""

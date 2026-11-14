@@ -50,11 +50,11 @@ ROWS: tuple[Command, ...] = (
     Command(("aim forward", "aim up"), "up", "Aim forward", area="Aim"),
     Command(("aim back", "aim down"), "down", "Aim back", area="Aim"),
     Command(("reset aim",), "a", "Reset aim", area="Aim"),
-    Command(("aim point",), "f3", "Aim point", area="Aim", wired=False),
+    Command(("aim point",), "f3", "Aim point", area="hitting_course"),
     Command(("shot cam", "shot camera"), "j", "Shot camera", area="Aim"),
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
-    Command(("stop",), "", "Stop aim, zoom, tee, flyover, a moving marker, or a slider being dragged", area="Aim"),
+    Command(("stop",), "", "Stop aim, zoom, tee, fly over, a moving marker, or a slider being dragged", area="Aim"),
     Command(("gspro start",), "", "Start GSPro if it is not running", area="Launch"),
     Command(("practice screen",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
     Command(
@@ -98,6 +98,7 @@ ROWS: tuple[Command, ...] = (
     Command(("open commands", "show commands"), "", "Show the commands dialog over GSPro", area="Help"),
     Command(("close commands", "hide commands"), "", "Close the commands dialog", area="Help"),
     Command(("place ball grid",), "", "Click the ball icon, then pick a point on the grid to place the ball", area="Ball"),
+    Command(("place pin grid",), "", "Hold Shift and click the icon (it turns into a flag), then pick a point on the grid to place the pin", area="Ball"),
     Command(("alpha",), "", "Grid: cell A (column or row)", area="Grid"),
     Command(("bravo",), "", "Grid: cell B (column or row)", area="Grid"),
     Command(("charlie",), "", "Grid: cell C (column or row)", area="Grid"),
@@ -124,7 +125,6 @@ ROWS: tuple[Command, ...] = (
     Command(("xray",), "", "Grid: cell X (column or row)", area="Grid"),
     Command(("yankee",), "", "Grid: cell Y (column or row)", area="Grid"),
     Command(("zulu",), "", "Grid: cell Z (column or row)", area="Grid"),
-    Command(("show grid",), "", "Draw the grid: 26 by 26, then 10 by 10 inside the chosen cell; the point is clicked", area="Grid"),
     Command(("hide grid",), "", "Hide the numbered grid", area="Grid"),
     Command(("cancel grid",), "", "Close the grid and click the ball icon again, which undoes the placement", area="Grid"),
     Command(("show current grammar",), "", "In the commands dialog, show the commands listening now", area="Help"),
@@ -154,43 +154,77 @@ ROWS: tuple[Command, ...] = (
     Command(("holes tab",), "", "On round settings, switch to the Holes tab", area="Launch"),
     Command(("play course",), "", "On round settings, press PLAY for the course that is set up", area="Launch"),
     Command(("show favorites",), "", "On course practice: show only your favorite courses", area="Launch"),
-    Command(("clear course",), "", "On course practice: clear the course search so the full list shows", area="Launch"),
-    Command(("stop listening",), "", "Pause voice commands. Only 'start listening' is heard until then", area="Voice"),
-    Command(("start listening",), "", "Resume voice commands", area="Voice"),
+    Command(("clear filter",), "", "On course practice: clear the course search so the full list shows", area="Launch"),
+    Command(("start filter",), "", "On course practice: type a course name, one NATO letter at a time, to narrow the list", area="Course chooser"),
+    Command(("stop filter",), "", "Stop typing the course filter; the list stays as it is", area="Course chooser"),
+    Command(("backspace",), "", "While filtering: delete the last letter, in case it was misheard", area="Course chooser"),
+    Command(("download one",), "", "Download the course in row 1 (not if it is already installed)", area="Course chooser"),
+    Command(("download two",), "", "Download the course in row 2 (not if it is already installed)", area="Course chooser"),
+    Command(("download three",), "", "Download the course in row 3 (not if it is already installed)", area="Course chooser"),
+    Command(("download four",), "", "Download the course in row 4 (not if it is already installed)", area="Course chooser"),
+    Command(("download five",), "", "Download the course in row 5 (not if it is already installed)", area="Course chooser"),
+    Command(("download six",), "", "Download the course in row 6 (not if it is already installed)", area="Course chooser"),
+    Command(("download seven",), "", "Download the course in row 7 (not if it is already installed)", area="Course chooser"),
+    Command(("download eight",), "", "Download the course in row 8 (not if it is already installed)", area="Course chooser"),
+    Command(("download nine",), "", "Download the course in row 9 (not if it is already installed)", area="Course chooser"),
+    Command(("play one",), "", "Play the installed course in row 1 (not if it still shows Download)", area="Course chooser"),
+    Command(("play two",), "", "Play the installed course in row 2 (not if it still shows Download)", area="Course chooser"),
+    Command(("play three",), "", "Play the installed course in row 3 (not if it still shows Download)", area="Course chooser"),
+    Command(("play four",), "", "Play the installed course in row 4 (not if it still shows Download)", area="Course chooser"),
+    Command(("play five",), "", "Play the installed course in row 5 (not if it still shows Download)", area="Course chooser"),
+    Command(("play six",), "", "Play the installed course in row 6 (not if it still shows Download)", area="Course chooser"),
+    Command(("play seven",), "", "Play the installed course in row 7 (not if it still shows Download)", area="Course chooser"),
+    Command(("play eight",), "", "Play the installed course in row 8 (not if it still shows Download)", area="Course chooser"),
+    Command(("play nine",), "", "Play the installed course in row 9 (not if it still shows Download)", area="Course chooser"),
+    Command(("play one now",), "", "Play the installed course in row 1, then press PLAY on round settings", area="Course chooser"),
+    Command(("play two now",), "", "Play the installed course in row 2, then press PLAY on round settings", area="Course chooser"),
+    Command(("play three now",), "", "Play the installed course in row 3, then press PLAY on round settings", area="Course chooser"),
+    Command(("play four now",), "", "Play the installed course in row 4, then press PLAY on round settings", area="Course chooser"),
+    Command(("play five now",), "", "Play the installed course in row 5, then press PLAY on round settings", area="Course chooser"),
+    Command(("play six now",), "", "Play the installed course in row 6, then press PLAY on round settings", area="Course chooser"),
+    Command(("play seven now",), "", "Play the installed course in row 7, then press PLAY on round settings", area="Course chooser"),
+    Command(("play eight now",), "", "Play the installed course in row 8, then press PLAY on round settings", area="Course chooser"),
+    Command(("play nine now",), "", "Play the installed course in row 9, then press PLAY on round settings", area="Course chooser"),
+    Command(("space",), "", "Filter: type a space", area="Filter entry"),
+    Command(("underscore",), "", "Filter: type an underscore (_)", area="Filter entry"),
+    Command(("dash",), "", "Filter: type a dash (-)", area="Filter entry"),
+    Command(("comma",), "", "Filter: type a comma (,)", area="Filter entry"),
+    Command(("period",), "", "Filter: type a period (.)", area="Filter entry"),
+    Command(("parenthesis",), "", "Filter: type a bracket; the first is ( and the next is )", area="Filter entry"),
+    Command(("number sign",), "", "Filter: type a number sign (#)", area="Filter entry"),
+    Command(("plus sign",), "", "Filter: type a plus sign (+)", area="Filter entry"),
+    Command(("toggle listening",), "", "Pause voice commands, or resume them. While paused, only 'toggle listening' is heard", area="Voice"),
     Command(("show installed",), "", "On course practice: show the whole installed list again", area="Launch"),
     Command(("show menu",), "", "While playing: open the game menu (hamburger, upper right)", area="Launch"),
     Command(("cancel menu",), "", "While playing: close the game menu", area="Launch"),
     Command(("debug press",), "", "Debug: one test press on the practice range card", area="Debug"),
-    Command(("switch hand",), "n", "Switch hand", area="hitting_base"),
+    Command(("toggle hand",), "n", "Switch hand (left or right)", area="hitting_base"),
     Command(("club up",), "i", "Next club toward the putter", area="Club"),
     Command(("club down",), "k", "Next club toward the driver", area="Club"),
-    Command(("putter",), "u", "Jump to the putter", area="Club", heard=False),
+    Command(("club putter",), "u", "Jump to the putter", area="Club", heard=False),
     Command(("zoom in",), "q", "Zoom in", area="Map", repeat=True, hold=True),
     Command(("zoom out",), "w", "Zoom out", area="Map", repeat=True, hold=True),
     Command(("map resize", "mini map", "shrink map"), "s", "Toggle the mini map (S): expand or shrink", area="Map", closes=True),
     Command(("sync map small",), "", "Tell the app the mini map is small (no keys, no clicks)", area="Map"),
     Command(("sync map large",), "", "Tell the app the mini map is large (no keys, no clicks)", area="Map"),
-    Command(("map mode start",), "", "On the course screen, hold the mouse button on the mini map center (distances show)", area="Map"),
-    Command(("map mode end",), "", "Let go of the mouse button and leave map mode", area="Map"),
-    Command(("free flight mode start", "flight mode start"), "", "On the course screen, turn on free flight (F5)", area="Map"),
-    Command(("free flight mode end", "flight mode end"), "", "Turn free flight off (F5 again)", area="Map"),
+    Command(("toggle free flight", "toggle flight"), "", "On the course screen, turn free flight on (F5), or off again (F5)", area="Map"),
     Command(("marker place",), "", "On the course screen, drop a marker at the center of the mini map, or where the moved marker is", area="Map"),
     Command(("marker left",), "", "On the course screen, move the marker left until stop", area="Map"),
     Command(("marker right",), "", "On the course screen, move the marker right until stop", area="Map"),
     Command(("marker up",), "", "On the course screen, move the marker up until stop", area="Map"),
     Command(("marker down",), "", "On the course screen, move the marker down until stop", area="Map"),
-    Command(("flyover",), "o", "Flyover", area="View", closes=True, stops=True),
-    Command(("heat map",), "y", "Heat map", area="View"),
-    Command(("scorecard",), "t", "Scorecard", area="View", closes=True),
+    Command(("fly over",), "o", "Flyover", area="View", closes=True, stops=True),
+    Command(("toggle heatmap",), "y", "Toggle the heat map", area="View"),
+    Command(("toggle scorecard",), "t", "Toggle the scorecard", area="View", closes=True),
     Command(("close",), "", "Press the last toggle again", area="View"),
-    Command(("green grid",), "g", "Green grid", area="View"),
-    Command(("pin indicator", "show pin", "pin"), "p", "Pin indicator", area="View"),
+    Command(("toggle green grid",), "g", "Toggle the green grid", area="View"),
+    Command(("toggle pin indicator", "show pin", "pin"), "p", "Toggle the pin indicator", area="View"),
     Command(("range finder",), "r", "Range finder", area="View", closes=True),
     Command(("look left",), "left", "Slide range finder left", area="View", hold=True),
     Command(("look right",), "right", "Slide range finder right", area="View", hold=True),
-    Command(("hide ui",), "h", "Hide the interface", area="hitting_base"),
-    Command(("show ui", "open menu"), "esc", "Show the interface", area="hitting_base"),
-    Command(("clear tracer",), "f1", "Clear tracers", area="View", wired=False),
+    Command(("toggle ui",), "h", "Hide the interface, or show it again (Esc) if it is hidden", area="hitting_base"),
+    Command(("open menu",), "esc", "Show the interface", area="hitting_base"),
+    Command(("clear tracer",), "f1", "Clear tracers", area="Range"),
     Command(("mulligan",), ("ctrl", "m"), "Mulligan", area="Mulligan"),
     Command(("cam go to ball",), "5", "Camera to the ball", area="Camera", wired=False),
     Command(("cam fly to ball",), "6", "Fly the camera to the ball", area="Camera", wired=False),
@@ -203,9 +237,12 @@ ROWS: tuple[Command, ...] = (
     Command(("lighting",), "l", "Cycle lighting", area="Visual / System", wired=False),
     Command(("3d grass",), "z", "3D grass", area="Visual / System", wired=False),
     Command(("fps",), "f", "FPS counter", area="Visual / System", wired=False),
-    Command(("shadow down",), ("shift", ","), "Lighter shadows", area="Visual / System", wired=False),
-    Command(("shadow up",), ("shift", "."), "Deeper shadows", area="Visual / System", wired=False),
-    Command(("fullscreen",), "f11", "Fullscreen", area="Visual / System", wired=False),
+    Command(("shadow one",), "", "Shadow level 1 (lightest); the first time, or the same level twice, starts from the lightest", area="Visual / System", heard=False),
+    Command(("shadow two",), "", "Shadow level 2", area="Visual / System", heard=False),
+    Command(("shadow three",), "", "Shadow level 3", area="Visual / System", heard=False),
+    Command(("shadow four",), "", "Shadow level 4", area="Visual / System", heard=False),
+    Command(("shadow five",), "", "Shadow level 5 (deepest)", area="Visual / System", heard=False),
+    Command(("fullscreen",), "f11", "Toggle GSPro fullscreen (F11)", area="Visual / System"),
     Command(("fast forward", "faster"), "space", "Fast forward", area="Visual / System"),
     Command(("sound off",), "minus", "Sound off", area="Visual / System", wired=False),
     Command(("sound on",), "add", "Sound on", area="Visual / System", wired=False),
@@ -363,9 +400,10 @@ def match_command(text: str) -> str | None:
     """Longest known phrase contained in a recognition result, as its primary phrase."""
     from app.bag import spoken_phrases
     from app.gspro_courses import course_phrases
+    from app.shadows import spoken_phrases as shadow_phrases
 
     cleaned = spoken_text(text)
-    found = [phrase for phrase in (*COMMANDS, *spoken_phrases(), *course_phrases()) if phrase in cleaned]
+    found = [phrase for phrase in (*COMMANDS, *spoken_phrases(), *shadow_phrases(), *course_phrases()) if phrase in cleaned]
     if not found:
         return None
     return primary(max(found, key=len))
@@ -445,6 +483,8 @@ def key_text(binding: str | tuple[str, ...]) -> str:
 
 def press_times(keys: list[str]) -> None:
     """Repeat a run of the same key slowly enough for GSPro to see each one."""
+    import time
+
     import pydirectinput
 
     index = 0
@@ -453,7 +493,13 @@ def press_times(keys: list[str]) -> None:
         count = 1
         while index + count < len(keys) and keys[index + count] == key:
             count += 1
-        pydirectinput.press(key, presses=count, interval=0.08)
+        if "+" in key:  # a held modifier, written "shift+," (see app/shadows.py)
+            modifier, _, letter = key.partition("+")
+            for _ in range(count):
+                press_keys((modifier, letter))
+                time.sleep(0.08)
+        else:
+            pydirectinput.press(key, presses=count, interval=0.08)
         index += count
 
 

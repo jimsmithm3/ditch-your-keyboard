@@ -64,7 +64,7 @@ PLAY_COURSE = Action(
 PLAY_NOW = Action("Play now", "now", ("now",), shot="round_settings.png")
 SHOW_FAVORITES = Action("Show favorites", "show favorites", ("show favorites",), shot="on_course_practice_favorites.png")
 SHOW_INSTALLED = Action("Show installed", "show installed", ("show installed",))
-CLEAR_COURSE = Action("Clear course search", "clear course", ("clear course",))
+CLEAR_COURSE = Action("Clear course search", "clear filter", ("clear filter",))
 SHOW_MENU = Action("Show menu", "show menu", ("show menu",), shot="training_screen.png")
 CANCEL_MENU = Action("Cancel menu", "cancel menu", ("cancel menu",))
 EXPAND_MAP = Action("Map resize", "map resize", (), shot="mini_map_expanded.png")  # keystroke S, not a click

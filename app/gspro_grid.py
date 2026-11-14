@@ -18,9 +18,10 @@ from PySide6.QtWidgets import QWidget
 
 from app.clicks import click, move
 from app.commands import press_keys
-from app.connector_ui import _point, _rect, find_window
+from app.connector_ui import _point, client_rect, find_window
 from app.focus import _force_foreground
 from app.gspro_overlay import set_status
+from app.gspro_settings import map_side
 from app.gspro_screens import GRID_WORDS
 from app.gspro_ui import BALL_ICON, GSPRO_TITLE, MAP_EXPANDED_BOUNDS, MAP_SMALL_BOUNDS
 
@@ -143,7 +144,7 @@ def _place() -> bool:
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return False
-    left, top, right, bottom = _rect(hwnd)  # physical pixels
+    left, top, right, bottom = client_rect(hwnd)  # physical pixels
     # SetWindowPos puts the window BELOW the handle it is given, so give it the window just above GSPro
     # (0 means the top of the stack). Then the grid is above GSPro and below our app's windows.
     above = ctypes.windll.user32.GetWindow(hwnd, GW_HWNDPREV)
@@ -219,7 +220,7 @@ def _click_point(x: float, y: float) -> None:
         return
     # Move the cursor onto the point first and let it rest there, so the ball cursor is on the spot before
     # the press. Then click at the same spot.
-    point = _point(_rect(hwnd), (x, y))
+    point = _point(client_rect(hwnd), (x, y))
     move(*point, "place ball: grid point")
     time.sleep(PLACE_HOVER_SECONDS)
     click(*point, "place ball: grid point")
@@ -230,6 +231,8 @@ MAP_RESIZE_SECONDS = 0.6  # a settle pause after the S key, so GSPro has finishe
 MAP_RESTORE_WAIT_SECONDS = 1.0  # before the S key that makes the map small again, after the ball icon click
 PLACE_HOVER_SECONDS = 1.0  # the cursor rests on the picked point before the press, so the ball cursor is there first
 SETTLE_SECONDS = 0.5  # a pause between the point click and the ball icon click, so GSPro takes the first one
+ZOOM_PAUSE_SECONDS = 0.3  # between the zoom in and zoom out taps, so GSPro sees each one
+_placing_flag = False  # True for "place pin grid": the flag is placed with Shift held, not the ball with Ctrl
 _restore_small = False  # True while the map is large only for ball placement; it goes back to small after
 
 
@@ -282,30 +285,110 @@ def _cursor_is_ball() -> bool:
     return info.hCursor not in standard
 
 
+def _mirror(bounds: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    """The same box on the other side of the window: left and right swap, top and bottom stay."""
+    left, top, right, bottom = bounds
+    return 1 - right, top, 1 - left, bottom
+
+
+def _expanded_bounds() -> tuple[float, float, float, float]:
+    """The large map's box for this side of the screen (the left side is a mirror of the right)."""
+    return MAP_EXPANDED_BOUNDS if map_side() == "right" else _mirror(MAP_EXPANDED_BOUNDS)
+
+
+def _small_bounds() -> tuple[float, float, float, float]:
+    return MAP_SMALL_BOUNDS if map_side() == "right" else _mirror(MAP_SMALL_BOUNDS)
+
+
+def _to_small_map(x: float, y: float) -> tuple[float, float]:
+    """The same relative spot on the small map as (x, y) is on the large map, both in window fractions."""
+    el, et, er, eb = _expanded_bounds()
+    sl, st, sr, sb = _small_bounds()
+    u, v = (x - el) / (er - el), (y - et) / (eb - et)
+    return sl + u * (sr - sl), st + v * (sb - st)
+
+
+def _toggle_map_size() -> None:
+    """Press S and keep the app's map flag in step. Waits for GSPro to finish resizing."""
+    from app.gspro_sequences import toggle_map
+
+    press_keys("s")
+    toggle_map()
+    time.sleep(MAP_RESIZE_SECONDS)
+
+
 def _finish(x: float, y: float) -> None:
-    """The final pick: click the point. If the cursor still shows the ball form, click the ball icon to finish
-    placement. Then put the map back the way it was."""
-    _click_point(x, y)
-    time.sleep(SETTLE_SECONDS)
-    ball = _cursor_is_ball()
-    log.info("place ball: after the point the cursor is %s", "the ball form" if ball else "a normal cursor")
-    if ball:
-        hwnd = find_window(GSPRO_TITLE)
-        if hwnd is not None and _force_foreground(hwnd):
-            click(*_point(_rect(hwnd), BALL_ICON), "place ball: ball icon to finish")
-    _map_restore()
+    """The final pick, made on the large map. GSPro seems to ignore a placement outside the small map, so: shrink
+    the map, click the same relative spot on the small map with Ctrl held (which places the ball), then expand
+    the map again if it was large before placement."""
+    global _restore_small
+    originally_large = not _restore_small  # if placement had to make the map large, it was small to begin with
+    _toggle_map_size()  # shrink for the placement
+    _restore_small = False
+    sx, sy = _to_small_map(x, y)
+    key = "shift" if _placing_flag else "ctrl"  # a flag is placed while Shift is held; a ball while Ctrl is
+    log.info("place %s: large map point %.3f, %.3f is small map point %.3f, %.3f", _what(), x, y, sx, sy)
+    _hold_key(key, True)
+    try:
+        _click_point(sx, sy)
+        time.sleep(SETTLE_SECONDS)
+        ball = _cursor_is_ball()
+        log.info("place ball: after the point the cursor is %s", "the ball form" if ball else "a normal cursor")
+        if ball:
+            _click_point(sx, sy)
+            time.sleep(SETTLE_SECONDS)
+            log.info(
+                "place ball: after the second point the cursor is %s",
+                "the ball form" if _cursor_is_ball() else "a normal cursor",
+            )
+    finally:
+        _hold_key(key, False)  # released before the S key, so it is not a Ctrl+S or Shift+S
+    if originally_large:
+        _toggle_map_size()  # the map was large before placement: make it large again
+    _refresh_map()
 
 
-def _place_ball() -> None:
+def _refresh_map() -> None:
+    """Zoom in and back out. GSPro's small map does not redraw after a placement until the zoom changes, so this
+    refreshes it. (A workaround until the glitch is fixed.)"""
+    press_keys("q")  # zoom in
+    time.sleep(ZOOM_PAUSE_SECONDS)
+    press_keys("w")  # zoom out
+    time.sleep(ZOOM_PAUSE_SECONDS)
+
+
+def _hold_key(name: str, down: bool) -> None:
+    import pydirectinput
+
+    if down:
+        pydirectinput.keyDown(name)
+    else:
+        pydirectinput.keyUp(name)
+
+
+def _what() -> str:
+    return "flag" if _placing_flag else "ball"
+
+
+def _place_ball(flag: bool = False) -> None:
     """Make the map large if needed, click the ball icon (placement mode), then pick the point on the grid.
-    The grid covers the large map only, so the point is on the map."""
+    The grid covers the large map only, so the point is on the map. With flag, the icon is clicked while Shift is
+    held, which turns it into the flag, and the point is then placed with Shift held (see _finish)."""
+    global _placing_flag
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None or not _force_foreground(hwnd):
-        log.info("place ball: GSPro not in front; not started")
+        log.info("place %s: GSPro not in front; not started", "flag" if flag else "ball")
         return
+    _placing_flag = flag
     _map_to_large()
-    click(*_point(_rect(hwnd), BALL_ICON), "place ball: ball icon")
-    start(on_final=_finish, region=MAP_EXPANDED_BOUNDS)
+    if flag:
+        _hold_key("shift", True)
+    try:
+        click(*_point(client_rect(hwnd), BALL_ICON), f"place {_what()}: icon")
+    finally:
+        if flag:
+            _hold_key("shift", False)
+    start(on_final=_finish, region=_expanded_bounds())
 
 
 def _cancel() -> None:
@@ -316,7 +399,7 @@ def _cancel() -> None:
     if hwnd is None or not _force_foreground(hwnd):
         log.info("cancel grid: GSPro not in front; not clicked")
         return
-    click(*_point(_rect(hwnd), BALL_ICON), "cancel grid: ball icon")
+    click(*_point(client_rect(hwnd), BALL_ICON), "cancel grid: ball icon")
     set_status("Grid cancelled")
 
 
@@ -334,4 +417,4 @@ def handle(event: tuple[str, int | None]) -> None:
     elif action == "pick" and value is not None:
         pick(value)
     elif action == "place":
-        _place_ball()
+        _place_ball(flag=value == "flag")

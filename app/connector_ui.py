@@ -1,4 +1,4 @@
-"""Finish SQG-GSPRO-Connect's setup for "please play golf": Scan, Connect the LM, Connect GSPro.
+"""Finish SQG-GSPRO-Connect's setup for "gspro start": Scan, Connect the LM, Connect GSPro.
 
 The connector exposes no accessibility tree and no native child controls, so this
 clicks at positions inside its window. Each position is a fraction of the window
@@ -273,3 +273,13 @@ def finish_setup_in_background(on_done: Callable[[str], None] | None = None) -> 
             on_done(note)
 
     threading.Thread(target=run, name="gspraudio-connector-setup", daemon=True).start()
+
+
+def client_rect(hwnd: int) -> tuple[int, int, int, int]:
+    """The inside of a window (no title bar or border), in physical screen pixels. GSPro's clicks use this, so they
+    land the same in windowed and fullscreen."""
+    rect = wintypes.RECT()
+    _user32.GetClientRect(hwnd, ctypes.byref(rect))
+    corner = wintypes.POINT(0, 0)
+    _user32.ClientToScreen(hwnd, ctypes.byref(corner))
+    return corner.x, corner.y, corner.x + rect.right, corner.y + rect.bottom

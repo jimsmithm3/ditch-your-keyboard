@@ -42,7 +42,39 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Back": ("back screen",),
     "Range": ("open preferences", "close preferences", "change driving range distance"),  # GSPro Range only: the driving range panel (see PANELS); close is here too, so it is heard after the panel memory drifts
     "Tabs": ("players tab", "match tab", "holes tab"),  # round settings: the three tabs along the top
-    "Course chooser": ("show favorites", "show installed", "clear course"),
+    "Course chooser": (
+        "show favorites",
+        "show installed",
+        "clear filter",
+        "start filter",
+        "download one",
+        "download two",
+        "download three",
+        "download four",
+        "download five",
+        "download six",
+        "download seven",
+        "download eight",
+        "download nine",
+        "play one",
+        "play two",
+        "play three",
+        "play four",
+        "play five",
+        "play six",
+        "play seven",
+        "play eight",
+        "play nine",
+        "play one now",
+        "play two now",
+        "play three now",
+        "play four now",
+        "play five now",
+        "play six now",
+        "play seven now",
+        "play eight now",
+        "play nine now",
+    ),
     # "sync to <screen>": on every screen (see SCREEN_WIDE_GROUPS), not while a panel is open
     "Sync": tuple(SYNC_PHRASES),
     "Aim": (
@@ -50,30 +82,44 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "aim right",
         "aim forward",
         "aim back",
-        "reset aim",
-        "aim point",
-        "shot cam",
         "stop",
     ),
     "View": (
-        "flyover",
-        "heat map",
+        "fly over",
         "close",
-        "green grid",
-        "pin indicator",
         "range finder",
-        "look left",
-        "look right",
-        "clear tracer",
     ),
     # Hitting groups. hitting_base is for every screen where a ball is hit (course play, course practice, and
     # later the ranges). hitting_course and hitting_range hold what is common to those screens but not to
     # each other. Commands move in here once confirmed on both screens of their kind.
-    # Club names are spoken too, so they go with this group (see group_phrases). No club, no hit.
-    "hitting_base": ("hide ui", "show ui", "club up", "club down", "putter", "switch hand"),
+    # The club grammar: club up, club down, putter, and the club names the bag has (spoken; see group_phrases).
+    "Club": (
+        "club putter",
+    ),
+    "hitting_base": (
+        "stop",
+        "reset aim",
+        "toggle ui",
+        "open menu",
+        "toggle heatmap",
+        "toggle green grid",
+        "toggle pin indicator",
+        "look left",
+        "look right",
+        "club up",
+        "club down",
+        "toggle hand",
+    ),
     # Course play and course practice only. Menu and ball placement are here too (the range screens lose
     # them until the ranges are revisited).
     "hitting_course": (
+        "shot cam",
+        "aim point",
+        "shadow one",
+        "shadow two",
+        "shadow three",
+        "shadow four",
+        "shadow five",
         "tee left",
         "tee right",
         "show menu",
@@ -84,17 +130,13 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "map resize",
         "mini map",
         "shrink map",
-        "map mode start",
-        "map mode end",
         "marker place",
         "marker left",
         "marker right",
         "marker up",
         "marker down",
-        "free flight mode start",
-        "flight mode start",
-        "free flight mode end",
-        "flight mode end",
+        "toggle free flight",
+        "toggle flight",
         "sync map small",
         "sync map large",
     ),
@@ -137,19 +179,35 @@ GRID_WORDS: tuple[str, ...] = (
 GRID_INDEX: dict[str, int] = {word: index for index, word in enumerate(GRID_WORDS)}
 GRID_PHRASES: tuple[str, ...] = (*GRID_WORDS, "hide grid", "cancel grid")
 
+# Typing by voice (app/text_entry.py). Its grammar is on only while the course filter is typing, so it is not
+# one of the screen's own groups: see RUNTIME_GROUPS.
+GROUPS["Filter entry"] = (
+    *GRID_WORDS,  # the NATO letters
+    "space",
+    "underscore",
+    "dash",
+    "comma",
+    "period",
+    "parenthesis",
+    "number sign",
+    "plus sign",
+    "backspace",
+    "stop filter",
+)
+RUNTIME_GROUPS: tuple[str, ...] = ("Filter entry",)
+
 # The commands dialog's tab phrases. Their own grammar, on only while the dialog is open (see the listener).
 DIALOG_GROUP = "dialog"
 DIALOG_PHRASES: tuple[str, ...] = ("show current grammar", "show always on")
 
 # Always listening, on every screen. This is the way out when the screen memory is wrong.
 GLOBAL: tuple[str, ...] = (
-    "stop listening",
-    "start listening",
+    "toggle listening",
     "gspro start",
     "start screen",
     "open commands",
     "close commands",
-    "show grid",
+    "fullscreen",
 )
 
 SCREEN_RECORDS: tuple[Screen, ...] = (
@@ -191,7 +249,14 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
     Screen("challenges", "Challenges", "home"),
     Screen("tournaments", "Tournaments", "home"),
     Screen("online", "Online match", "home"),
-    Screen("range", "GSPro Range", "practice", groups=("Range", "hitting_range"), note="hit balls"),
+    Screen(
+        "range",
+        "GSPro Range",
+        "practice",
+        groups=("Range", "hitting_base", "Club", "hitting_range"),
+        note="hit balls",
+        phrases=("clear tracer", "show menu", "cancel menu"),
+    ),
     Screen(
         "on_course",
         "On course practice",
@@ -208,7 +273,14 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         groups=("Back", "Course chooser"),
         note="range chooser",
     ),
-    Screen("driving_range", "Additional Range", "additional", groups=("hitting_range",), note="hit balls"),
+    Screen(
+        "driving_range",
+        "Additional Range",
+        "additional",
+        groups=("hitting_base", "Club", "hitting_range"),
+        note="hit balls",
+        phrases=("show menu", "cancel menu"),
+    ),
     # Round settings, reached from On course practice (practice) or Local match (play).
     Screen(
         "round_settings_practice",
@@ -226,9 +298,9 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "course_practice",
         "Course Practice",
         "round_settings_practice",
-        groups=("Aim", "View", "hitting_base", "hitting_course"),
+        groups=("Aim", "View", "hitting_base", "Club", "hitting_course"),
         # Only on course practice: 8 goes to the ball, 9 and 0 move between holes. Place ball is here too.
-        phrases=("place ball grid", "go to ball", "previous hole", "next hole"),
+        phrases=("place ball grid", "place pin grid", "go to ball", "previous hole", "next hole", "clear tracer"),
     ),
     Screen(
         "round_settings_play",
@@ -244,8 +316,8 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "play",
         "Course play",
         "round_settings_play",
-        groups=("Aim", "View", "hitting_base", "hitting_course"),
-        phrases=("scorecard",),  # course play only, not course practice
+        groups=("Aim", "View", "hitting_base", "Club", "hitting_course"),
+        phrases=("toggle scorecard",),  # course play only, not course practice
         note="hit balls",
     ),
 )
@@ -270,7 +342,7 @@ def group_grammar(name: str) -> str:
 
 def group_phrases(name: str, spoken: tuple[str, ...] = ()) -> tuple[str, ...]:
     """The phrases a group's grammar holds. Club names (spoken) go with the Club group."""
-    return GROUPS[name] + (tuple(spoken) if name == "hitting_base" else ())
+    return GROUPS[name] + (tuple(spoken) if name == "Club" else ())
 
 
 SCREEN_WIDE_GROUPS: tuple[str, ...] = ("Sync",)  # every screen listens to these, in addition to its own groups
@@ -282,7 +354,9 @@ def grammar_groups_for(key: str, spoken: tuple[str, ...] = ()) -> set[str]:
     return {group_grammar(name) for name in names if group_phrases(name, spoken)}
 
 
-GROUP_GRAMMAR_NAMES: tuple[str, ...] = tuple(group_grammar(name) for name in GROUPS if GROUPS[name])
+GROUP_GRAMMAR_NAMES: tuple[str, ...] = tuple(
+    group_grammar(name) for name in GROUPS if GROUPS[name] and name not in RUNTIME_GROUPS
+)
 
 # Panels are sub-screens: a dialog or panel that opens on a screen and gets its own grammar while
 # it is open. Named by what it is, since more will be added (the map will be one). Opened and
