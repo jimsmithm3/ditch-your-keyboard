@@ -53,6 +53,23 @@ phrase wins.
 | panel and overlay mechanism | the panels, their positions and their contents |
 | settings, logging, text entry, window placement, startup | the game's window title, database, launch and connector |
 
+## Actions and chains
+
+An **action** is one thing a plug-in can do in the game. A plug-in gets the core actions out of the box, and writes its
+own for anything more complicated. A **chain** runs several actions in a set order, with a set delay after each step.
+
+- Core actions (`hfg/actions.py`): `click` (a point), `slider` (press the left end and drag until a stop step),
+  `text_entry` (type into the focused box), `grid` (pick a point with the lettered grid).
+- Custom actions: a plug-in registers its own with `register_action`, under a name, and uses it in chains like a core one.
+- A step is `Step(action, params, delay_after)`. The delay is set per chain, so it can be tuned without changing the
+  action. An action that cannot be done raises `ActionFailed`, and the chain stops at that step.
+- Chains are the same idea as the GSPro sequences in `app/gspro_sequences.py` (`Step` there). The new version is the
+  general form, so the GSPro sequences can later become plain data.
+
+Status: the mechanism and the core action names exist. The core actions do not drive a game yet; they call
+`click_fraction`, `drag_fraction`, `type_text` and `pick_with_grid` on the plug-in, which the GSPro adapter will supply.
+The chain runner is tested with a fake game.
+
 ## One active plug-in
 
 Only one plug-in is active at a time. The overview page has a Game dropdown that picks it, and the choice is saved
