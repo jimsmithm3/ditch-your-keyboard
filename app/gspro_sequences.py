@@ -220,7 +220,7 @@ def marker_move(phrase: str) -> str:
         _marker_history.clear()
         _marker_history.append((time.monotonic(), _marker_offset))  # where a rewind starts at the earliest
         _marker_stop_event.clear()
-        _marker_thread = threading.Thread(target=_marker_loop, name="gspraudio-marker", daemon=True)
+        _marker_thread = threading.Thread(target=_marker_loop, name="ditch-your-keyboard-marker", daemon=True)
         _marker_thread.start()
     return f"{phrase}: moving; say stop"
 
@@ -598,7 +598,7 @@ def slider_start(name: str) -> str:
     _slider_history.clear()
     _slider_history.append((time.monotonic(), left))
     _slider_stop_event.clear()
-    _slider_thread = threading.Thread(target=_slider_loop, name="gspraudio-slider", daemon=True)
+    _slider_thread = threading.Thread(target=_slider_loop, name="ditch-your-keyboard-slider", daemon=True)
     _slider_thread.start()
     log.info("%s: button held at the left end of the track", name)
     return f"{name}: dragging; say stop when it is where you want"
@@ -989,7 +989,7 @@ def run_course_in_background(
         if on_done is not None:
             on_done(note)
 
-    threading.Thread(target=run, name="gspraudio-play-course", daemon=True).start()
+    threading.Thread(target=run, name="ditch-your-keyboard-play-course", daemon=True).start()
     return f"Playing {text}"
 
 
@@ -1110,7 +1110,7 @@ def run_in_background(name: str, on_done: Callable[[str], None] | None = None) -
         if on_done is not None:
             on_done(note)
 
-    threading.Thread(target=run, name=f"gspraudio-{name}", daemon=True).start()
+    threading.Thread(target=run, name=f"ditch-your-keyboard-{name}", daemon=True).start()
     return f"Running {name}"
 
 

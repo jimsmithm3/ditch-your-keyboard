@@ -1,8 +1,8 @@
-# Probe: does Windows speech recognize the gspraudio command grammar from the default mic?
+# Probe: does Windows speech recognize the ditch-your-keyboard command grammar from the default mic?
 #
 # Usage (from the project folder):
-#   .\.venv\Scripts\python.exe -m app.wsapi_grammar --out $env:TEMP\gspraudio_commands.srgs.xml
-#   powershell -ExecutionPolicy Bypass -File scripts\wsapi_probe.ps1 -Grammar $env:TEMP\gspraudio_commands.srgs.xml
+#   .\.venv\Scripts\python.exe -m app.wsapi_grammar --out $env:TEMP\ditch-your-keyboard_commands.srgs.xml
+#   powershell -ExecutionPolicy Bypass -File scripts\wsapi_probe.ps1 -Grammar $env:TEMP\ditch-your-keyboard_commands.srgs.xml
 #
 # Speak a phrase from the list (for example "eight iron"). Each recognized phrase prints
 # with its confidence. Recognize() returns nothing on timeout, so silence prints nothing.

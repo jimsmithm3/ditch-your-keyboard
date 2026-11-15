@@ -71,7 +71,7 @@ class WsapiRecognizer:
         log.info("windows speech started: %s", self._engine.RecognizerInfo.Name)
 
     def _load(self, name: str, phrases, enabled: bool) -> None:
-        fd, path = tempfile.mkstemp(prefix="gspraudio_", suffix=".srgs.xml")
+        fd, path = tempfile.mkstemp(prefix="ditch-your-keyboard_", suffix=".srgs.xml")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(phrases_to_srgs(phrases))

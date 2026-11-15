@@ -1,4 +1,4 @@
-"""Small saved preferences. Stored in gspraudio.db's app_state table under a 'pref.' prefix."""
+"""Small saved preferences. Stored in ditch-your-keyboard.db's app_state table under a 'pref.' prefix."""
 
 from app.players import connect
 

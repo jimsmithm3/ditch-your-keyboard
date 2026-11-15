@@ -1,11 +1,11 @@
-"""Preferences page: the MCT Constants table, ported to gspraudio.
+"""Preferences page: the MCT Constants table, ported to ditch-your-keyboard.
 
 Layout comes from ui/preferences.ui (the MCT designer file, trimmed to the
 Constants page). Each row is a PrefSpec. Edits go into a pending dict, and Save
-writes them to gspraudio.db through app.prefs. Calibration sits under the table
+writes them to ditch-your-keyboard.db through app.prefs. Calibration sits under the table
 because it measures the room rather than editing a value.
 
-Most settings are read when gspraudio starts, so a saved change applies after a restart.
+Most settings are read when ditch-your-keyboard starts, so a saved change applies after a restart.
 """
 
 import re
@@ -111,7 +111,7 @@ PREFS: list[PrefSpec] = [
     PrefSpec(
         "Send Keys At Start",
         "send_keys_default",
-        "Whether keys are sent to GSPro when gspraudio starts",
+        "Whether keys are sent to GSPro when ditch-your-keyboard starts",
         "VOICE",
         "True",
         "DROPDOWN",
@@ -482,7 +482,7 @@ class PrefsPage(QWidget):
             set_pref(key, value)
         self._pending.clear()
         self._refresh_pending()
-        self._set_status("Saved. Most settings apply after you restart gspraudio.")
+        self._set_status("Saved. Most settings apply after you restart ditch-your-keyboard.")
 
     def _on_cancel(self) -> None:
         """Close the page. If there are unsaved changes, ask first."""

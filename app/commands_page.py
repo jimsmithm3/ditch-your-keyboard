@@ -1,6 +1,6 @@
 """Commands page: the table of GSPro voice commands. Unwired rows are light red.
 
-The Tested column is saved in gspraudio.db (via app.prefs), keyed by each row's
+The Tested column is saved in ditch-your-keyboard.db (via app.prefs), keyed by each row's
 first phrase, so the list of what still needs testing survives restarts.
 Click a Tested cell to toggle Yes / No.
 """

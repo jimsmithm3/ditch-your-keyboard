@@ -60,7 +60,7 @@ def debug_press_in_background(on_done: Callable[[str], None] | None = None) -> s
         if on_done is not None:
             on_done(note)
 
-    threading.Thread(target=run, name="gspraudio-debug-press", daemon=True).start()
+    threading.Thread(target=run, name="ditch-your-keyboard-debug-press", daemon=True).start()
     return "Debug press running"
 
 
@@ -75,7 +75,7 @@ def range_press_in_background(on_done: Callable[[str], None] | None = None) -> s
         if on_done is not None:
             on_done(note)
 
-    threading.Thread(target=run, name="gspraudio-practice-range", daemon=True).start()
+    threading.Thread(target=run, name="ditch-your-keyboard-practice-range", daemon=True).start()
     return "Going to the practice range"
 
 

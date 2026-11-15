@@ -1,6 +1,6 @@
 """Course names for the "play course <name>" grammar, kept in our own database.
 
-The course table in gspraudio.db is copied from GSPro's CourseRepoCourse table when the
+The course table in ditch-your-keyboard.db is copied from GSPro's CourseRepoCourse table when the
 Developer page's sync button is pressed. The copy replaces our list each time, and
 GSPro Multi Range is left out because it is not a course. The grammar reads our table, so
 GSPro's database is not needed at startup.

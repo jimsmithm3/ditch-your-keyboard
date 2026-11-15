@@ -1,4 +1,4 @@
-"""Developer page: switches for testing gspraudio without disturbing GSPro."""
+"""Developer page: switches for testing ditch-your-keyboard without disturbing GSPro."""
 
 from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -21,7 +21,7 @@ def build_developer_page() -> QWidget:
     page.send_keys_check = send_keys  # main_window.py connects this to the listener
     layout.addWidget(send_keys)
 
-    test_mode = QCheckBox("Test gspraudio: don't unminimize GSPro")
+    test_mode = QCheckBox("Test ditch-your-keyboard: don't unminimize GSPro")
     # Restore the saved choice before connecting, so startup doesn't re-save it.
     test_mode.setChecked(get_bool(TEST_MODE_KEY, False))
     focus.set_restore_minimized(not test_mode.isChecked())

@@ -101,7 +101,7 @@ def _log_page() -> QWidget:
     view.setReadOnly(True)
     view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
     view.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
-    log_file = writable_dir() / "logs" / "gspraudio.log"
+    log_file = writable_dir() / "logs" / "ditch-your-keyboard.log"
 
     def refresh() -> None:
         try:

@@ -273,7 +273,7 @@ def finish_setup_in_background(on_done: Callable[[str], None] | None = None) -> 
         if on_done is not None:
             on_done(note)
 
-    threading.Thread(target=run, name="gspraudio-connector-setup", daemon=True).start()
+    threading.Thread(target=run, name="ditch-your-keyboard-connector-setup", daemon=True).start()
 
 
 def client_rect(hwnd: int) -> tuple[int, int, int, int]:

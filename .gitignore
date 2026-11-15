@@ -9,4 +9,4 @@ logs/
 *.log
 models/
 current_bag.txt
-gspraudio.db
+ditch-your-keyboard.db

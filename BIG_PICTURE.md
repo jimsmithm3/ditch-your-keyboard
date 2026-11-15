@@ -1,10 +1,10 @@
-# gspraudio: big picture
+# Ditch Your Keyboard: big picture
 
 Living notes. Add to it as decisions get made. Keep it short. Details live in `HANDOFF.md`.
 
 ## Why it exists
 
-Golf sim at home. GSPro is projected onto a wall, so the player is standing and swinging in front of it. A keyboard or clicker breaks the immersion. gspraudio listens for voice commands ("aim left five", "hey caddie stop") and sends the matching keystrokes to GSPro, so the player never touches a device.
+Golf sim at home. GSPro is projected onto a wall, so the player is standing and swinging in front of it. A keyboard or clicker breaks the immersion. ditch-your-keyboard listens for voice commands ("aim left five", "hey caddie stop") and sends the matching keystrokes to GSPro, so the player never touches a device.
 
 ## Setup
 

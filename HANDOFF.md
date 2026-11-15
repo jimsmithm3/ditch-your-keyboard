@@ -1,19 +1,19 @@
-# gspraudio handoff
+# Ditch Your Keyboard handoff
 
-Hands-free voice caddie for GSPro. PySide6 window, Vosk speech, keystrokes into the GSPro window. Python 3.14. Project root `C:\dev\gspraudio`. Run `main.py` from that root in PyCharm (SDK "Python 3.14 (gspraudio)"). Do not rebuild `dist\gspraudio.exe` unless asked. Do not commit unless asked.
+Hands-free voice caddie for GSPro. PySide6 window, Vosk speech, keystrokes into the GSPro window. Python 3.14. Project root `C:\dev\ditch-your-keyboard`. Run `main.py` from that root in PyCharm (SDK "Python 3.14 (ditch-your-keyboard)"). Do not rebuild `dist\ditch-your-keyboard.exe` unless asked. Do not commit unless asked.
 
-Copy the whole project folder to the other computer. A git clone is not enough: `models/`, `gspraudio.db`, and `current_bag.txt` are gitignored, and this work may be uncommitted. Recreate `.venv` on the other machine rather than copying it. Use `PySide6_Essentials` and `shiboken6` only. Do not install the `PySide6` metapackage; it pulls WebEngine and has deleted `PySide6/__init__.py` before.
+Copy the whole project folder to the other computer. A git clone is not enough: `models/`, `ditch-your-keyboard.db`, and `current_bag.txt` are gitignored, and this work may be uncommitted. Recreate `.venv` on the other machine rather than copying it. Use `PySide6_Essentials` and `shiboken6` only. Do not install the `PySide6` metapackage; it pulls WebEngine and has deleted `PySide6/__init__.py` before.
 
 ## Run
 
-- Venv: `C:\dev\gspraudio\.venv`
-- Wake words: "hey caddie" or "hey caddy". "gspraudio" is not in the small Vosk lexicon.
+- Venv: `C:\dev\ditch-your-keyboard\.venv`
+- Wake words: "hey caddie" or "hey caddy". "ditch-your-keyboard" is not in the small Vosk lexicon.
 - Model: `models/vosk-model-small-en-us-0.15`
 - Send keys defaults on. The switch is on the Developer page ("Send keys to GSPro"), saved as pref `send_keys_default`. It is no longer on the Voice page.
 - One mic thread. Prefer DirectSound. Open 16000 Hz or resample. Do not call sounddevice from the GUI thread.
 - Focus GSPro once per command (`app/focus.py`: title contains "gspro", AttachThreadInput). On failure, do not send keys; the status bar says why. Do not re-focus between keys.
 - Main window UI is `ui/main_window.ui` loaded with QUiLoader. Dialogs are built in code.
-- Log: `logs/gspraudio.log`
+- Log: `logs/ditch-your-keyboard.log`
 
 ## Voice
 
@@ -31,11 +31,11 @@ Recognizer choice is on Mic setup: Windows speech (WSAPI, default) or Vosk. It i
 
 Bag order, driver toward putter: Driver, 3 wood, 5 wood, 3–9 iron, Utility iron last among irons, Pitching, Gap, Sand, 56, Lob, Putter. I steps toward the putter. K steps toward the driver. Saying "putter" sends U once and remembers that index. Saying putter again does not send U. A repeated non-putter club, when the putter is in the bag, sends U then K back to that club. With no putter, it walks K to the driver and I back up. Reset club is still K back to the driver.
 
-Edit bag is four columns (Woods, Irons, Wedges, Other), no scroll. Count label turns red over 14 clubs but save is still allowed. Empty selection is blocked. Utility iron and 56 wedge are gspraudio-only. They are not in GSPro's 27-club enum and do not persist in the player database.
+Edit bag is four columns (Woods, Irons, Wedges, Other), no scroll. Count label turns red over 14 clubs but save is still allowed. Empty selection is blocked. Utility iron and 56 wedge are ditch-your-keyboard-only. They are not in GSPro's 27-club enum and do not persist in the player database.
 
 ## Players and bags
 
-Local database: `gspraudio.db` next to the project (stdlib sqlite3).
+Local database: `ditch-your-keyboard.db` next to the project (stdlib sqlite3).
 
 - `player`: id, name, `bag_id` (GSPro locker bag id, nullable)
 - `player_club`: player_id, club_index, active, nickname
@@ -82,7 +82,7 @@ Do not send a test shot into a live round. The socket is shot data in, and repli
 - `app/launch.py` — "gspro start" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
 - `app/main_window.py` — player, bag summary, status bar, buttons
 - `resources/gspro_clubs.json` — GSPro club enum
-- `gspraudio.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`
+- `ditch-your-keyboard.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`
 
 ## GSPro menu sequences (add new chained commands here)
 
@@ -110,7 +110,7 @@ Do not send a test shot into a live round. The socket is shot data in, and repli
 
 ## Left alone on purpose
 
-Do not wire the red command rows unless asked. The GSPro bag dialog writes locker nicknames only. It does not update `gspraudio.db` or rebuild the recognizer. Player nicknames are the ones copied at create time, then heard after a restart or a player switch. README is stale. Esc doing nothing in GSPro was not a gspraudio bug.
+Do not wire the red command rows unless asked. The GSPro bag dialog writes locker nicknames only. It does not update `ditch-your-keyboard.db` or rebuild the recognizer. Player nicknames are the ones copied at create time, then heard after a restart or a player switch. README is stale. Esc doing nothing in GSPro was not a ditch-your-keyboard bug.
 
 ## Open work: "play match" (planned, not built)
 
@@ -126,7 +126,7 @@ Plan:
 
 - Click relative to GSPro's window (find handle, read its rect, click at a fixed offset), not at fixed screen coordinates.
 - GSPro runs full screen on its own monitor, shown on a projector. Full screen is not a fixed window position, so click coordinates must be taken from that monitor's full-screen rect (or use UI Automation if the button is exposed). Confirm this still works in full screen before relying on it.
-- Make gspraudio DPI-aware so coordinates match the 125% scaling. (`app/connector_ui.py` already does this.)
+- Make ditch-your-keyboard DPI-aware so coordinates match the 125% scaling. (`app/connector_ui.py` already does this.)
 - Before clicking, confirm GSPro is foreground and in the expected spot. If not, skip the click and report it in the status bar.
 - Check the click spot once with a screenshot before relying on it.
 - Open question: does GSPro expose the button to accessibility tools (UI Automation, by name)? If so, prefer that over coordinates.

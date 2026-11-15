@@ -1,4 +1,4 @@
-"""Explore what Windows speech recognition (System.Speech) does with the gspraudio grammar.
+"""Explore what Windows speech recognition (System.Speech) does with the ditch-your-keyboard grammar.
 
 Usage (from the project folder):
     .\\.venv\\Scripts\\python.exe scripts\\wsr_explore.py 30
@@ -57,7 +57,7 @@ def main() -> None:
             engine.LoadGrammar(DictationGrammar())
             mode = "dictation"
         else:
-            grammar_file = Path(tempfile.gettempdir()) / "gspraudio_commands.srgs.xml"
+            grammar_file = Path(tempfile.gettempdir()) / "ditch-your-keyboard_commands.srgs.xml"
             grammar_file.write_text(phrases_to_srgs(all_phrases()), encoding="utf-8")
             engine.LoadGrammar(Grammar(str(grammar_file)))
             mode = f"command grammar ({len(all_phrases())} phrases)"

@@ -30,7 +30,7 @@ exe = EXE(
     a.binaries,
     a.datas,s
     [],
-    name="gspraudio",
+    name="ditch-your-keyboard",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

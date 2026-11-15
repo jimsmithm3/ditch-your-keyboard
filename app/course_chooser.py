@@ -129,7 +129,7 @@ def panel_action(phrase: str) -> str:
     else:
         return f"{phrase}: not in the course panel"
     threading.Thread(
-        target=_panel_click, args=(target, phrase, after_play, then_now), daemon=True, name="gspraudio-panel"
+        target=_panel_click, args=(target, phrase, after_play, then_now), daemon=True, name="ditch-your-keyboard-panel"
     ).start()
     return f"{phrase}: working"
 
@@ -218,13 +218,13 @@ def backspace() -> str:
 
 def download(number: int) -> str:
     """Click the Download button of row number. Runs in the background, since the clicks take a moment."""
-    threading.Thread(target=_download_now, args=(number,), daemon=True, name="gspraudio-download").start()
+    threading.Thread(target=_download_now, args=(number,), daemon=True, name="ditch-your-keyboard-download").start()
     return f"download {number}: working"
 
 
 def favorite(number: int) -> str:
     """Click the favourite heart of row number, which turns that course's favourite on or off. Runs in the background."""
-    threading.Thread(target=_favorite_now, args=(number,), daemon=True, name="gspraudio-favorite").start()
+    threading.Thread(target=_favorite_now, args=(number,), daemon=True, name="ditch-your-keyboard-favorite").start()
     return f"{TOGGLE} favorite {number}: working"
 
 
@@ -240,7 +240,7 @@ def _favorite_now(number: int) -> None:
 def play(number: int, then_now: bool) -> str:
     """Click the Play button of row number, for a course already installed. then_now also presses PLAY on
     round settings, so the round starts. Runs in the background."""
-    threading.Thread(target=_play_now, args=(number, then_now), daemon=True, name="gspraudio-play").start()
+    threading.Thread(target=_play_now, args=(number, then_now), daemon=True, name="ditch-your-keyboard-play").start()
     return f"play {number}{' now' if then_now else ''}: working"
 
 
@@ -283,7 +283,7 @@ def _download_now(number: int) -> None:
 def _watch_for_new_course(before: int, number: int) -> None:
     """Wait for GSPro's course table to gain a row, then sync the course list and tell the hooks."""
     threading.Thread(
-        target=_watch_now, args=(before, number), daemon=True, name="gspraudio-download-watch"
+        target=_watch_now, args=(before, number), daemon=True, name="ditch-your-keyboard-download-watch"
     ).start()
 
 

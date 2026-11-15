@@ -196,7 +196,7 @@ class VoiceListener(QObject):
         self.spl_offset = spl_offset
         self._recent: deque = deque(maxlen=2000)  # (time, dBFS) of recent blocks
         self._commands: queue.Queue = queue.Queue()
-        self._thread = threading.Thread(target=self._thread_main, name="gspraudio-mic", daemon=True)
+        self._thread = threading.Thread(target=self._thread_main, name="ditch-your-keyboard-mic", daemon=True)
         self._started = False
 
     def start(self) -> None:

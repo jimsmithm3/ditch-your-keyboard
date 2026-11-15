@@ -14,7 +14,7 @@ foreach ($dir in @("build", "dist")) {
     }
 }
 
-& $Python -m PyInstaller --noconfirm --clean (Join-Path $Root "gspraudio.spec")
+& $Python -m PyInstaller --noconfirm --clean (Join-Path $Root "ditch-your-keyboard.spec")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Built $(Join-Path $Root 'dist\gspraudio.exe')"
+Write-Host "Built $(Join-Path $Root 'dist\ditch-your-keyboard.exe')"

@@ -1,13 +1,20 @@
 """Local players and the clubs in each player's bag."""
 
 import json
+import shutil
 import sqlite3
 
 from app.paths import resource_path, writable_dir
 
 
 def db_path():
-    return writable_dir() / "gspraudio.db"
+    """The app's database. It was called gspraudio.db before the rename; the first run after the rename copies that
+    file, so the saved preferences and course list carry over. The old file is left where it is."""
+    path = writable_dir() / "ditch-your-keyboard.db"
+    legacy = writable_dir() / "gspraudio.db"
+    if not path.exists() and legacy.exists():
+        shutil.copy2(legacy, path)
+    return path
 
 
 def _catalog() -> list[dict]:
