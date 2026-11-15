@@ -53,6 +53,13 @@ phrase wins.
 | panel and overlay mechanism | the panels, their positions and their contents |
 | settings, logging, text entry, window placement, startup | the game's window title, database, launch and connector |
 
+## One active plug-in
+
+Only one plug-in is active at a time. The overview page has a Game dropdown that picks it, and the choice is saved
+in the app's settings (`hfg/active.py`). A switch takes effect after a restart, so the base app never has two games'
+phrases listening at once. The list of choices is `AVAILABLE` in `hfg/active.py`; a plug-in is added there when it is
+written.
+
 ## Plug-in layout (planned)
 
 Each plug-in is its own project, so it can be developed and versioned separately. The base app loads the plug-ins

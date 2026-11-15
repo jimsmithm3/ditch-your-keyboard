@@ -10,7 +10,7 @@ import threading
 from datetime import datetime
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app import gspro_tree as tree
 from app.connector_ui import lights
@@ -18,6 +18,7 @@ from app.gspro_sequences import CLOSED, current_screen
 from app.launch import _process_running
 from app.screen_table_dialog import show_screen_table
 from app.grammar_words import NAV, TOGGLE
+from hfg.active import AVAILABLE, active, set_active
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +58,19 @@ class OverviewPage(QWidget):
         self._busy = False
 
         layout = QVBoxLayout(self)
+        # The game this app drives. One at a time; a change takes effect after a restart.
+        self._started_with = active()
+        game_row = QHBoxLayout()
+        game_row.addWidget(QLabel("Game:"))
+        self._game = QComboBox()
+        self._game.addItems(AVAILABLE)
+        self._game.setCurrentText(self._started_with)
+        self._game.currentTextChanged.connect(self._on_game)
+        game_row.addWidget(self._game)
+        self._game_note = QLabel("")
+        self._game_note.setStyleSheet("color: #c62828;")
+        game_row.addWidget(self._game_note, 1)
+        layout.addLayout(game_row)
         self._dots: dict[str, QLabel] = {}
         for key, text in self.CHECKS:
             row = QHBoxLayout()
@@ -107,6 +121,10 @@ class OverviewPage(QWidget):
         listener.command.connect(self._on_command)
         listener.utterance.connect(self._on_heard)
         listener.mode.connect(self._on_mode)
+
+    def _on_game(self, name: str) -> None:
+        set_active(name)
+        self._game_note.setText("" if name == self._started_with else f"Restart the app to use {name}")
 
     def _on_mode(self, on: bool) -> None:
         self._mode.setText("Voice: listening" if on else f"Voice: PAUSED. Say {TOGGLE} listening.")
