@@ -72,6 +72,13 @@ PANEL_CLOSE_CHEVRON = (0.298, 0.123)  # the up arrow at the top right of the ope
 MAX_SLIDER_LEFT = (0.024, 0.395)  # 5 px right of the first try (that landed just left of the track), then 2 px back left; the click was pulling the slider
 MIN_SLIDER_LEFT = (0.0245, 0.4475)
 SLIDER_RIGHT_X = 0.2066
+WIND_MPH = (0.53, 0.022)  # the wind speed text beside the arrow at the top; a click opens the wind panel
+WIND_DIRECTION_LEFT = (0.4505, 0.1317)  # left end of the Direction track in the open wind panel
+WIND_STRENGTH_LEFT = (0.4505, 0.1975)  # left end of the Strength track
+WIND_RIGHT_X = 0.5523  # right end of both wind tracks
+HOLE_ICON = (0.1056, 0.0560)  # the flag icon at the top left of course practice: opens the change hole panel, and closes it
+HOLE_COLUMNS = (0.1005, 0.1461, 0.1916, 0.2391, 0.2842, 0.3301)  # the six columns of hole numbers in the panel
+HOLE_ROWS = (0.1308, 0.2118, 0.2927)  # the three rows of hole numbers in the panel
 
 # Game menu (opens over the upper right of the range)
 END_ROUND_BUTTON = (0.903, 0.636)  # END ROUND at the bottom of the menu

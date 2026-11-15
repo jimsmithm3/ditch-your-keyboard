@@ -1,4 +1,4 @@
-"""Finish SQG-GSPRO-Connect's setup for "gspro start": Scan, Connect the LM, Connect GSPro.
+"""Finish SQG-GSPRO-Connect's setup for "click gspro": Scan, Connect the LM, Connect GSPro.
 
 The connector exposes no accessibility tree and no native child controls, so this
 clicks at positions inside its window. Each position is a fraction of the window
@@ -25,6 +25,7 @@ from typing import Callable
 from app.clicks import click
 from app.focus import _force_foreground
 from app.launch import _process_running
+from app.grammar_words import NAV
 
 log = logging.getLogger(__name__)
 

@@ -20,7 +20,7 @@ REFRESH_MS = 500  # the tables follow the screen or panel while the dialog is op
 OFFSET = (20, 80)  # logical pixels from the GSPro window's top left corner
 WIDTH_SHARE = 0.45  # the dialog's width as a share of the GSPro window's width
 HEADERS = ["Say", "Also say", "What it does", "Wired up"]
-BACKGROUND = "rgba(20, 24, 32, 150)"  # the dialog's tint; the last number is the opacity (0 clear, 255 solid)
+BACKGROUND = "rgba(48, 48, 48, 185)"  # the dialog's tint, dark grey; the last number is the opacity (0 clear, 255 solid)
 CURRENT_TAB = 0
 ALWAYS_TAB = 1
 

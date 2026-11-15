@@ -4,6 +4,7 @@ import logging
 import subprocess
 import time
 from pathlib import Path
+from app.grammar_words import NAV
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def stop_connector() -> str:
 
 
 def start_play_golf(on_done=None) -> str:
-    """The "gspro start" command: start GSPro and the connector, then click the connector's
+    """The "click gspro" command: start GSPro and the connector, then click the connector's
     Scan / Connect buttons in the background. on_done(note) reports the setup result."""
     from app.connector_ui import finish_setup_in_background
 

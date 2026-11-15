@@ -59,6 +59,13 @@ from app.gspro_ui import (
     MAX_SLIDER_LEFT,
     MIN_SLIDER_LEFT,
     SLIDER_RIGHT_X,
+    HOLE_COLUMNS,
+    HOLE_ICON,
+    HOLE_ROWS,
+    WIND_DIRECTION_LEFT,
+    WIND_MPH,
+    WIND_RIGHT_X,
+    WIND_STRENGTH_LEFT,
     PREFERENCES_CHEVRON,
     ROUND_TAB_MATCH,
     ROUND_TAB_PLAYERS,
@@ -70,12 +77,13 @@ from app.gspro_ui import (
     WATCH_MENU,
     WATCH_SCREEN,
 )
+from app.grammar_words import NAV, TOGGLE
 
 log = logging.getLogger(__name__)
 
 TYPE_GAP_SECONDS = 0.02  # between typed characters in the course search
 PLAY_CHANGE_SECONDS = 0.5  # how long to look for the list to change after Play; the list normally does not change here, so this is mostly waited out
-FILTER_SETTLE_SECONDS = 0.2  # after typing, before Play; the course list filters almost at once
+FILTER_SETTLE_SECONDS = 0.5  # after typing, before Play; the list needs a moment to show the one row
 COMMAND_WAIT_SECONDS = 30.0  # a command waits this long for a running sequence to finish, instead of being dropped
 WATCH_GRID = 8
 CHANGE_LEVEL = 15  # average brightness difference that counts as a changed screen
@@ -88,19 +96,18 @@ _lock = threading.Lock()
 # can be wrong after a manual change. CLOSED means GSPro is not running.
 CLOSED = "closed"
 SCREEN_AFTER: dict[str, str] = {
-    "practice screen": "practice",
-    "gspro practice range now": "range",
-    "on course practice now": "on_course",
-    "additional ranges now": "additional",
-    "gspro practice range": "range",
-    "start screen": "home",
+    f"{NAV} practice": "practice",
+    f"{NAV} range now": "range",
+    f"{NAV} on course practice now": "on_course",
+    f"{NAV} additional ranges now": "additional",
+    f"{NAV} range": "range",
+    f"{NAV} screen": "home",
     "confirm": "home",  # the end round dialog's CONFIRM goes back to the home screen
     "gspro exit": CLOSED,
-    "on course practice": "on_course",
-    "additional ranges": "additional",
-    "play screen": "local_match",
+    f"{NAV} on course practice": "on_course",
+    f"{NAV} additional ranges": "additional",
+    f"{NAV} play": "local_match",
     "now": "play",  # PLAY on round settings starts the course
-    "marker place": "play",  # a click on the map does not change the screen
 }
 def _startup_screen() -> str:
     """Home if GSPro is already running when the app starts, otherwise closed."""
@@ -166,20 +173,21 @@ def set_ui_hidden(hidden: bool) -> None:
 
 
 # Marker nudging (course screen): "marker left" etc. move the pointer a little at a time from
-# the map center until "stop". "marker place" clicks the center plus the offset reached.
+# the map center until "stop". "place marker" holds the button; saying it again drops the marker where it is.
 MARKER_STEP = 0.0015  # fraction of the GSPro window per move; tune by feel
 MARKER_TICK_SECONDS = 0.06  # pause between moves
+MARKER_MAP_RESIZE_SECONDS = 0.6  # after the S key that expands the map for "place marker"
 MARKER_LIMIT = 0.15  # the offset never goes further than this from the map center
 MARKER_DIRECTIONS: dict[str, tuple[int, int]] = {
-    "marker left": (-1, 0),
-    "marker right": (1, 0),
-    "marker up": (0, -1),
-    "marker down": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+    "up": (0, -1),
+    "down": (0, 1),
 }
 # Voice phrases for the two course-screen modes. Map mode holds the mouse button; free flight
 # mode is F5 in GSPro.
 MAP_MODE_PHRASES = ()  # map mode start and end were removed: the grid does the map work now
-FLIGHT_TOGGLE_PHRASES = ("toggle free flight", "toggle flight")  # one phrase: F5 turns it on, then off
+FLIGHT_TOGGLE_PHRASES = (f"{TOGGLE} free flight", f"{TOGGLE} flight")  # one phrase: F5 turns it on, then off
 
 _marker_offset: tuple[float, float] = (0.0, 0.0)
 _marker_direction: tuple[int, int] | None = None
@@ -204,7 +212,7 @@ def marker_move(phrase: str) -> str:
     if _screen not in COURSE_PLAY_SCREENS:
         return f"{phrase}: say play screen and now first"
     if not _marker_mode:
-        return f"{phrase}: say map mode start first"  # the marker moves only while the mouse button is held
+        return f"{phrase}: say place marker first"  # the marker moves only while the mouse button is held
     if _lock.locked():
         return f"{phrase}: wait for the running GSPro sequence to finish"
     _marker_direction = MARKER_DIRECTIONS[phrase]
@@ -235,53 +243,80 @@ def _cursor_pixel() -> tuple[int, int]:
     return point.x, point.y
 
 
-def marker_start() -> str:
-    """Press and hold the left button on the mini map center, as GSPro's marker mode expects.
-    GSPro then shows the distances, and they update as the marker moves while held."""
-    global _marker_mode, _marker_offset
+MARKER_PANEL = "marker_panel"  # its grammar replaces the course screen's while the button is held
+
+
+def marker_placing() -> bool:
+    """True while "place marker" holds the button down at the marker: the next "place marker" drops it."""
+    return _marker_mode
+
+
+def marker_map_key() -> str:
+    """"toggle map" in the marker panel: press S to change the mini map's size, and leave the app's map flag alone,
+    in case the size was read the wrong way round. Say "sync map small" or "sync map large" to set the flag."""
+    import pydirectinput
+
+    pydirectinput.press("s")
+    time.sleep(MARKER_MAP_RESIZE_SECONDS)
+    log.info("marker panel: map size key pressed; the app's flag is not changed")
+    return "toggle map: S pressed; the app's flag is unchanged"
+
+
+def place_marker() -> str:
+    """"place marker": press and hold the button at the mini map's centre, whichever size it is. The map is left as it
+    is, so the course keeps updating as the marker moves. Say "place marker" again to drop it."""
+    global _marker_mode, _marker_offset, _panel
     if _screen not in COURSE_PLAY_SCREENS:
-        return "map mode start: say play screen and now first"
+        return "place marker: say play screen and now first"
     if _marker_mode:
-        return "Already in map mode; say map mode end to finish"
+        return "place marker: already held; say place marker again to drop it"
     if _lock.locked():
-        return "map mode start: wait for the running GSPro sequence to finish"
+        return "place marker: wait for the running GSPro sequence to finish"
     _halt_marker()
-    _marker_offset = (0.0, 0.0)
-    _marker_history.clear()
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return "GSPro window not found"
     if not _force_foreground(hwnd):
         return "could not bring GSPro to the front; not started"
     _show_interface()
+    _marker_offset = (0.0, 0.0)
+    _marker_history.clear()
     x, y = _point(client_rect(hwnd), _marker_point())
     _send(MOUSEEVENTF_MOVE, x, y)
     time.sleep(HOVER_SECONDS)
-    _send(MOUSEEVENTF_LEFTDOWN, x, y)  # held until map mode end
-    time.sleep(PRESS_SECONDS)  # let GSPro register the first placement at the center before any move
+    _send(MOUSEEVENTF_LEFTDOWN, x, y)  # held until "place marker" is said again
+    time.sleep(PRESS_SECONDS)  # let GSPro register the press at the center before any move
     _marker_mode = True
-    log.info("map mode: button held at (%d,%d)", x, y)
-    return "Map mode: button held at the center; move with marker left etc., say map mode end to finish"
+    _panel = MARKER_PANEL  # only the marker words listen until "cancel" or "place marker"
+    log.info("place marker: button held at (%d,%d)", x, y)
+    return "place marker: button held at the center; move with marker left etc., say place marker to drop it"
 
 
 def marker_end() -> str:
-    """Stop any movement and let go of the mouse button, which leaves map mode."""
+    """"place marker" again: drop the marker where it is. The map stays as it is."""
     if not _marker_mode:
         return "Not in map mode"
     return _release_marker()
 
 
+def marker_cancel() -> str:
+    """"cancel marker": let go of the button where the marker is and leave the marker panel. The map is not changed."""
+    return _release_marker()
+
+
 def _release_marker() -> str:
     """Let go of the held button where the pointer is now, and leave map mode."""
-    global _marker_mode
+    global _marker_mode, _panel
     _halt_marker()
+    if _panel == MARKER_PANEL:
+        _panel = None
     if not _marker_mode:
         return "Not in map mode"
     _marker_mode = False
     x, y = _cursor_pixel()
     _send(MOUSEEVENTF_LEFTUP, x, y)
     log.info("map mode ended: button released at (%d,%d)", x, y)
-    return "Marker placed; map mode ended"
+    return "Marker placed"
 
 
 def _press_f5() -> bool:
@@ -304,7 +339,7 @@ def flight_mode_start() -> str:
     if not _press_f5():
         return "could not bring GSPro to the front; not started"
     _flight_mode = True
-    return "Free flight mode on; say toggle free flight to leave"
+    return f"Free flight mode on; say {TOGGLE} free flight to leave"
 
 
 def flight_mode_end() -> str:
@@ -381,7 +416,7 @@ def marker_stop() -> str:
     _marker_offset = rewound
     _aim_marker_now()
     _marker_history.clear()
-    return "Marker stopped; say map mode end to finish"
+    return "Marker stopped; say place marker to drop it"
 
 
 # Sliders on the driving range panel: "change max" / "change min" press the left end of the track,
@@ -389,6 +424,8 @@ def marker_stop() -> str:
 SLIDER_PHRASES: dict[str, tuple[tuple[float, float], float] | None] = {
     "change max distance": (MAX_SLIDER_LEFT, SLIDER_RIGHT_X),  # "change max" is an alias
     "change min distance": (MIN_SLIDER_LEFT, SLIDER_RIGHT_X),  # "change min" is an alias
+    "change direction": (WIND_DIRECTION_LEFT, WIND_RIGHT_X),  # the wind panel, opened with "change wind"
+    "change strength": (WIND_STRENGTH_LEFT, WIND_RIGHT_X),
     "slide left": None,  # None: press where the pointer is, not at a track
     "slide right": None,
 }
@@ -425,9 +462,107 @@ def _release_slider_button(x: int, y: int) -> None:
         _send(MOUSEEVENTF_LEFTUP, x, y)
 
 
+WIND_SLIDERS = ("change direction", "change strength")
+WIND_PANEL = "wind_panel"  # its grammar replaces the screen's while it is open
+WIND_SCREENS = ("range", "course_practice")  # the wind panel is only on these two screens
+
+
+HOLE_PANEL = "hole_panel"  # the change hole panel on course practice: its grammar replaces the screen's while open
+HOLE_SCREENS = ("course_practice",)
+HOLE_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+              "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen")
+HOLE_NUMBER: dict[str, int] = {word: index + 1 for index, word in enumerate(HOLE_WORDS)}
+
+
+def hole_position(number: int) -> tuple[float, float]:
+    """Where a hole number sits in the panel: 1 to 9 in the left block (three by three), 10 to 18 in the right block."""
+    index = number - 1
+    if index < 9:
+        column, row = index % 3, index // 3
+    else:
+        column, row = 3 + (index - 9) % 3, (index - 9) // 3
+    return HOLE_COLUMNS[column], HOLE_ROWS[row]
+
+
+def _flag_click(note: str) -> str | None:
+    """Click the flag icon. Returns a message if GSPro could not be clicked, else None."""
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return "GSPro window not found"
+    if not _force_foreground(hwnd):
+        return "could not bring GSPro to the front; not clicked"
+    _show_interface()
+    click(*_point(client_rect(hwnd), HOLE_ICON), note)
+    return None
+
+
+def open_hole_panel() -> str:
+    """"change hole": click the flag icon to open the panel. Its grammar then replaces the screen's."""
+    global _panel
+    failed = _flag_click("change hole: flag icon")
+    if failed:
+        return failed
+    _panel = HOLE_PANEL
+    return "change hole: say a hole number, or cancel"
+
+
+def pick_hole(number: int) -> str:
+    """A hole number in the panel: click it, which changes the hole. The panel closes."""
+    global _panel
+    _panel = None
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return "GSPro window not found"
+    if not _force_foreground(hwnd):
+        return "could not bring GSPro to the front; not clicked"
+    click(*_point(client_rect(hwnd), hole_position(number)), f"hole {number}")
+    return f"hole {number}: done"
+
+
+def cancel_hole() -> str:
+    """"cancel" in the hole panel: click the flag icon again, which closes the panel."""
+    global _panel
+    _panel = None
+    failed = _flag_click("cancel hole: flag icon")
+    return failed or "cancel hole: done"
+
+
+def _click_wind(note: str) -> str | None:
+    """Click the wind speed (the arrow's title). Returns a message if GSPro could not be clicked, else None."""
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return "GSPro window not found"
+    if not _force_foreground(hwnd):
+        return "could not bring GSPro to the front; not clicked"
+    _show_interface()
+    click(*_point(client_rect(hwnd), WIND_MPH), note)
+    return None
+
+
+def open_wind() -> str:
+    """"change wind": click the wind speed to open the wind panel. Its grammar then replaces the screen's."""
+    global _panel
+    failed = _click_wind("change wind: wind speed")
+    if failed:
+        return failed
+    _panel = WIND_PANEL
+    return "change wind: done; say change direction or change strength, close when finished"
+
+
+def close_wind() -> str:
+    """"close" while the wind panel is open: click the wind speed again, which closes the panel."""
+    global _panel
+    _panel = None  # the panel is closed in the app's memory even if the click fails
+    failed = _click_wind("close wind: wind speed")
+    return failed or "close wind: done"
+
+
 def slider_start(name: str) -> str:
     global _slider_name, _slider_x, _slider_y, _slider_right, _slider_down, _slider_thread
-    if _screen != "range" or _panel != PREFERENCES_PANEL:
+    if name in WIND_SLIDERS:
+        if _panel != WIND_PANEL:
+            return f"{name}: say change wind first"
+    elif _screen != "range" or _panel != PREFERENCES_PANEL:
         return f"{name}: open preferences first"
     if motion_active():
         return f"{name}: already moving; say stop first"
@@ -469,10 +604,18 @@ def slider_start(name: str) -> str:
     return f"{name}: dragging; say stop when it is where you want"
 
 
+def _slider_panel_open() -> bool:
+    """The panel the running drag belongs to is still open: the wind panel for the wind sliders, the driving
+    preferences panel on the range for the others."""
+    if _slider_name in WIND_SLIDERS:
+        return _panel == WIND_PANEL
+    return _screen == "range" and _panel == PREFERENCES_PANEL
+
+
 def _slider_loop() -> None:
     global _slider_x
     while not _slider_stop_event.is_set():
-        if _screen != "range" or _panel != PREFERENCES_PANEL:
+        if not _slider_panel_open():
             break  # the panel closed or the screen changed under us
         hwnd = find_window(GSPRO_TITLE)
         if hwnd is None:
@@ -594,28 +737,28 @@ NUMBER_BOX_CLEAR_PRESSES = 1
 
 
 SEQUENCES: dict[str, tuple[Step, ...]] = {
-    "practice screen": (Step("PRACTICE", PRACTICE_CARD),),
-    "gspro practice range": (Step("PRACTICE RANGE", RANGE_CARD),),
+    f"{NAV} practice": (Step("PRACTICE", PRACTICE_CARD),),
+    f"{NAV} range": (Step("PRACTICE RANGE", RANGE_CARD),),
     # Home shortcuts: the practice screen is passed through, so these need no practice-screen grammar.
-    "gspro practice range now": (
+    f"{NAV} range now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("PRACTICE RANGE", RANGE_CARD),
     ),
-    "on course practice now": (
+    f"{NAV} on course practice now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),
     ),
-    "additional ranges now": (
+    f"{NAV} additional ranges now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),
     ),
     "back screen": (Step("BACK", BACK_BUTTON),),
     # Clicks BACK until a click does nothing, which means home (or as close as it can get).
-    "start screen": (Step("BACK", BACK_BUTTON, HOME_WATCH, repeat=8, wait=4.0),),
+    f"{NAV} screen": (Step("BACK", BACK_BUTTON, HOME_WATCH, repeat=8, wait=4.0),),
     "gspro exit": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
-    "on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
-    "additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
-    "play screen": (Step("LOCAL MATCH", LOCAL_CARD, WATCH_SCREEN),),
+    f"{NAV} on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
+    f"{NAV} additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
+    f"{NAV} play": (Step("LOCAL MATCH", LOCAL_CARD, WATCH_SCREEN),),
     # Plays the course that is set up on round settings. "play course" with no name does the same.
     "now": (Step("PLAY", ROUND_PLAY),),
     "players tab": (Step("PLAYERS TAB", ROUND_TAB_PLAYERS),),
@@ -638,7 +781,6 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     "change shots per five": (Step("SHOTS 5", SHOTS_5),),
     "change shots per ten": (Step("SHOTS 10", SHOTS_10),),
     "change shots per fifteen": (Step("SHOTS 15", SHOTS_15),),
-    "marker place": (Step("MARKER", MAP_SMALL_CENTER),),
     "clear filter": (Step("CLEAR SEARCH", CLEAR_SEARCH_CLICK, key="backspace"),),
     "show favorites": (Step("FAVORITES", FILTER_FAVORITES),),
     "show installed": (Step("INSTALLED", FILTER_INSTALLED),),
@@ -725,15 +867,22 @@ _panel: str | None = None  # the panel open right now; its grammar is the one li
 
 
 def current_panel() -> str | None:
+    global _panel
+    if _panel == WIND_PANEL and _screen not in WIND_SCREENS:
+        _panel = None  # the wind panel belongs to the practice range and course practice
+    if _panel == MARKER_PANEL and _screen not in COURSE_PLAY_SCREENS:
+        _panel = None  # the marker panel belongs to the course screens
+    if _panel == HOLE_PANEL and _screen not in HOLE_SCREENS:
+        _panel = None  # the hole panel belongs to course practice
     return _panel
 
 
-START_WAITING_NOTE = "start screen: waiting for confirm (say confirm)"  # start screen from the range or a course
+START_WAITING_NOTE = f"{NAV} screen: waiting for confirm (say confirm)"  # click screen from the range or a course
 
 
 def _remember_panel(name: str, note: str) -> None:
     global _panel
-    if name == "start screen" and note == START_WAITING_NOTE:
+    if name == f"{NAV} screen" and note == START_WAITING_NOTE:
         _panel = PANEL_OPENERS["end round"]  # the end round dialog is open, so its panel listens
         return
     if not note.endswith(": done"):
@@ -857,10 +1006,26 @@ def _clear_course_filter(hwnd: int) -> None:
     pydirectinput.press("backspace")
 
 
+def _search_words(spoken_text: str) -> str:
+    """What to type in GSPro's search for a spoken course name: the fewest letters of the real name that leave
+    exactly one row, counting the name, location and designer the way GSPro's filter does. Falls back to the
+    spoken words if the name is not in the list."""
+    from app.gspro_courses import course_key, course_names, courses_matching, spoken
+
+    real = next((name for name in course_names() if spoken(name) == spoken_text), None)
+    if real is None:
+        return spoken_text
+    target = course_key(real)
+    for count in range(1, len(target) + 1):
+        if courses_matching(target[:count]) == [real]:
+            return target[:count]
+    return target
+
+
 def _play_course(text: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return "GSPro is not running. Say gspro start."
+        return f"GSPro is not running. Say {NAV} gspro."
     if _screen in ROUND_SETTINGS_SCREENS:
         # The course is already set up here, so the name is not needed: press PLAY.
         hwnd = find_window(GSPRO_TITLE)
@@ -883,6 +1048,7 @@ def _play_course(text: str) -> str:
     import pydirectinput
 
     _clear_course_filter(hwnd)
+    text = _search_words(text)  # the real name's words, so "and" said for "&" is not typed
     click(*_point(client_rect(hwnd), SEARCH_BOX), f"play course {text}: search box")
     typed_at = time.monotonic()
     for character in text:
@@ -892,7 +1058,7 @@ def _play_course(text: str) -> str:
             pydirectinput.press(character, _pause=False)  # no built-in pause; the gap below sets the speed
         time.sleep(TYPE_GAP_SECONDS)
     log.info("play course %s: typed in %.1f s", text, time.monotonic() - typed_at)
-    time.sleep(FILTER_SETTLE_SECONDS)  # the list filters almost at once; no long wait needed
+    time.sleep(FILTER_SETTLE_SECONDS)  # the filtered list is drawn after the last letter; wait for it before Play
     before_click = _watch_grid(client_rect(hwnd), COURSE_LIST_WATCH)
     click(*_point(client_rect(hwnd), FIRST_PLAY), f"play course {text}: first row Play")
     # Round settings may not change the list area's brightness much, so this wait is short.
@@ -979,7 +1145,7 @@ def request_exit(on_done: Callable[[str], None] | None = None) -> str:
     step: nothing closes until confirm_exit is said in time. With it off, it closes at once."""
     global _exit_armed_until
     if _screen != "home":
-        return "gspro exit: only from the home screen; say start screen first"
+        return f"gspro exit: only from the home screen; say {NAV} screen first"
     if get_pref("confirm_exit", "False") != "True":
         _exit_armed_until = 0.0
         return run_in_background("gspro exit", on_done)
@@ -1017,7 +1183,7 @@ def _remember_screen(name: str, note: str) -> None:
     global _screen, _marker_mode
     if note.startswith(("Already running", "GSPro window not found", "GSPro is not running")):
         return  # nothing was clicked, so the screen is unchanged
-    if name == "start screen" and "at home" in note:
+    if name == f"{NAV} screen" and "at home" in note:
         _screen = "home"
     elif name == "back screen" and note.endswith(": done") and _screen:
         # BACK goes to the screen this one is reached from, as the tree says.
@@ -1040,7 +1206,7 @@ def _remember_screen(name: str, note: str) -> None:
 def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return "GSPro is not running. Say gspro start."
+        return f"GSPro is not running. Say {NAV} gspro."
     if name in ("show favorites", "show installed", "clear filter") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:
@@ -1053,13 +1219,9 @@ def _run(name: str) -> str:
         return f"{name}: open preferences first"
     if name in ("apply", "close preferences", "done", "randomizer on", "randomizer off") and slider_active():
         return f"{name}: say stop first; a slider is being dragged"
-    if name == "marker place" and _screen not in COURSE_PLAY_SCREENS:
-        return "marker place: say play screen and now first"
-    if name == "marker place" and _marker_mode:
-        return "marker place: map mode is on; say map mode end to finish"
     if name == "gspro exit" and _screen != "home":
         # EXIT is only on the home screen, so get there first with the same routine as "home screen".
-        home = _run("start screen")
+        home = _run(f"{NAV} screen")
         if home == START_WAITING_NOTE:  # from the range or a course, the end round dialog must be answered first
             return f"{name}: say confirm to end the round first, then say {name} again"
         if not (home.endswith(": done") or "at home" in home or "nothing to go back" in home):
@@ -1067,19 +1229,13 @@ def _run(name: str) -> str:
         _screen = "home"
     # Home is not skipped even when the memory says home: a screen we did not track may
     # have a BACK button, and on a real home screen the first BACK click does nothing.
-    if name == "start screen" and _screen in ("range", "play", "course_practice", "driving_range"):
+    if name == f"{NAV} screen" and _screen in ("range", "play", "course_practice", "driving_range"):
         # From the range or a course, going home is ending the round: the menu and END ROUND, then confirm.
         ended = _run("end round")
         if not ended.endswith(": done"):
             return ended
         return START_WAITING_NOTE  # the end round dialog is open; the panel waits for confirm
     steps = SEQUENCES[name]
-    if name == "marker place":
-        marker_stop()  # a moving marker stops before it is placed
-        # The map is small or expanded; its center is in a different place for each. The
-        # offset from "marker left" and friends moves the click away from that center.
-        center = MAP_EXPANDED_CENTER if _map_expanded else MAP_SMALL_CENTER
-        steps = (Step("MARKER", (center[0] + _marker_offset[0], center[1] + _marker_offset[1])),)
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return "GSPro window not found"
@@ -1123,7 +1279,7 @@ def _run(name: str) -> str:
         if number < len(steps) and not _force_foreground(hwnd):
             log.warning("%s: lost GSPro focus after %s", name, step.label)
             return f"{name}: lost GSPro focus after {step.label}; stopped"
-    if name in ("on course practice", "on course practice now", "play screen"):
+    if name in (f"{NAV} on course practice", f"{NAV} on course practice now", f"{NAV} play"):
         # The list takes a moment to fill. Then clear the old search so the full list shows.
         # Local match keeps its search too, so it gets the same clear.
         if _wait_until_still(hwnd, COURSE_LIST_WATCH) is None:

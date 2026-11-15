@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from app.commands import DIGIT_KEYS, ROWS, aliases_of, repeat_variants
 from app.gspro_tree import SCREENS as TREE_SCREENS
 from app.gspro_tree import SYNC_PHRASES
+from app.grammar_words import NAV, TOGGLE
 
 
 @dataclass(frozen=True)
@@ -46,34 +47,52 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "show favorites",
         "show installed",
         "clear filter",
-        "start filter",
-        "download one",
-        "download two",
-        "download three",
-        "download four",
-        "download five",
-        "download six",
-        "download seven",
-        "download eight",
-        "download nine",
-        "play one",
-        "play two",
-        "play three",
-        "play four",
-        "play five",
-        "play six",
-        "play seven",
-        "play eight",
-        "play nine",
-        "play one now",
-        "play two now",
-        "play three now",
-        "play four now",
-        "play five now",
-        "play six now",
-        "play seven now",
-        "play eight now",
-        "play nine now",
+        f"{NAV} filter",
+        "download row one",
+        "download row two",
+        "download row three",
+        "download row four",
+        "download row five",
+        "download row six",
+        "download row seven",
+        "download row eight",
+        "download row nine",
+        "play row one",
+        "play row two",
+        "play row three",
+        "play row four",
+        "play row five",
+        "play row six",
+        "play row seven",
+        "play row eight",
+        "play row nine",
+        "play row one now",
+        "play row two now",
+        "play row three now",
+        "play row four now",
+        "play row five now",
+        "play row six now",
+        "play row seven now",
+        "play row eight now",
+        "play row nine now",
+        f"{TOGGLE} favorite row one",
+        f"{TOGGLE} favorite row two",
+        f"{TOGGLE} favorite row three",
+        f"{TOGGLE} favorite row four",
+        f"{TOGGLE} favorite row five",
+        f"{TOGGLE} favorite row six",
+        f"{TOGGLE} favorite row seven",
+        f"{TOGGLE} favorite row eight",
+        f"{TOGGLE} favorite row nine",
+        "show notes one",
+        "show notes two",
+        "show notes three",
+        "show notes four",
+        "show notes five",
+        "show notes six",
+        "show notes seven",
+        "show notes eight",
+        "show notes nine",
     ),
     # "sync to <screen>": on every screen (see SCREEN_WIDE_GROUPS), not while a panel is open
     "Sync": tuple(SYNC_PHRASES),
@@ -99,19 +118,28 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "hitting_base": (
         "stop",
         "reset aim",
-        "toggle ui",
+        f"{TOGGLE} ui",
         "open menu",
-        "toggle heatmap",
-        "toggle green grid",
-        "toggle pin indicator",
+        f"{TOGGLE} heat map",
+        f"{TOGGLE} green grid",
+        f"{TOGGLE} pin",
         "look left",
         "look right",
         "club up",
         "club down",
-        "toggle hand",
+        f"{TOGGLE} hand",
     ),
-    # Course play and course practice only. Menu and ball placement are here too (the range screens lose
-    # them until the ranges are revisited).
+    # The game menu and ending a round: on any screen with hitting base, so the menu works on every hitting screen.
+    # Only while the show notes panel is open (see course_chooser.panel_open). "cancel" and "close" mean
+    # other things elsewhere, so they listen only here.
+    "Course notes panel": ("cancel", "close", "read more", "latest scores", "play course", "play course now"),
+    "Menu": (
+        "show menu",
+        "cancel menu",
+        "end round",
+    ),
+    # Course play and course practice only. Ball placement is here too (the range screens lose it until the
+    # ranges are revisited).
     "hitting_course": (
         "shot cam",
         "aim point",
@@ -122,21 +150,14 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "shadow five",
         "tee left",
         "tee right",
-        "show menu",
-        "cancel menu",
-        "end round",
         "zoom in",
         "zoom out",
-        "map resize",
+        f"{TOGGLE} map",
         "mini map",
         "shrink map",
-        "marker place",
-        "marker left",
-        "marker right",
-        "marker up",
-        "marker down",
-        "toggle free flight",
-        "toggle flight",
+        "place marker",
+        f"{TOGGLE} free flight",
+        f"{TOGGLE} flight",
         "sync map small",
         "sync map large",
     ),
@@ -147,7 +168,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
 GRID_GROUP = "grid"
 # The grid's cells are spoken with the NATO alphabet: distinct words that are less often misheard than
 # digits. Each cell is labelled with the first letter of its word, A to J. "golf" is a risk: it is close
-# to "gspro start", which always listens. The first word is cell 0 on the grid, and so on.
+# to "click gspro", which always listens. The first word is cell 0 on the grid, and so on.
 GRID_WORDS: tuple[str, ...] = (
     "alpha",
     "bravo",
@@ -177,7 +198,7 @@ GRID_WORDS: tuple[str, ...] = (
     "zulu",
 )
 GRID_INDEX: dict[str, int] = {word: index for index, word in enumerate(GRID_WORDS)}
-GRID_PHRASES: tuple[str, ...] = (*GRID_WORDS, "hide grid", "cancel grid")
+GRID_PHRASES: tuple[str, ...] = (*GRID_WORDS, "hide place", "cancel place", "redo", "toggle map")
 
 # Typing by voice (app/text_entry.py). Its grammar is on only while the course filter is typing, so it is not
 # one of the screen's own groups: see RUNTIME_GROUPS.
@@ -202,9 +223,10 @@ DIALOG_PHRASES: tuple[str, ...] = ("show current grammar", "show always on")
 
 # Always listening, on every screen. This is the way out when the screen memory is wrong.
 GLOBAL: tuple[str, ...] = (
-    "toggle listening",
-    "gspro start",
-    "start screen",
+    f"{TOGGLE} listening",
+    f"{TOGGLE} keyboard",
+    f"{NAV} gspro",
+    f"{NAV} screen",
     "open commands",
     "close commands",
     "fullscreen",
@@ -216,14 +238,14 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "Home",
         None,
         trans=(
-            Trans("practice screen", "practice", "practice screen"),
-            Trans("play screen", "local_match", "play screen"),
-            Trans("challenges screen", "challenges"),
-            Trans("tournaments screen", "tournaments"),
+            Trans(f"{NAV} practice", "practice", f"{NAV} practice"),
+            Trans(f"{NAV} play", "local_match", f"{NAV} play"),
+            Trans(f"{NAV} challenges", "challenges"),
+            Trans(f"{NAV} tournaments", "tournaments"),
             Trans("online match", "online"),
-            Trans("gspro practice range now", "range", "gspro practice range now"),  # from home, skips the practice screen
-            Trans("on course practice now", "on_course", "on course practice now"),
-            Trans("additional ranges now", "additional", "additional ranges now"),
+            Trans(f"{NAV} range now", "range", f"{NAV} range now"),  # from home, skips the practice screen
+            Trans(f"{NAV} on course practice now", "on_course", f"{NAV} on course practice now"),
+            Trans(f"{NAV} additional ranges now", "additional", f"{NAV} additional ranges now"),
         ),
         groups=("Exit",),
     ),
@@ -240,9 +262,9 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "Practice",
         "home",
         trans=(
-            Trans("gspro practice range", "range", "gspro practice range"),
-            Trans("on course practice", "on_course", "on course practice"),
-            Trans("additional ranges", "additional", "additional ranges"),
+            Trans(f"{NAV} range", "range", f"{NAV} range"),
+            Trans(f"{NAV} on course practice", "on_course", f"{NAV} on course practice"),
+            Trans(f"{NAV} additional ranges", "additional", f"{NAV} additional ranges"),
         ),
         groups=("Back",),
     ),
@@ -253,9 +275,9 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "range",
         "GSPro Range",
         "practice",
-        groups=("Range", "hitting_base", "Club", "hitting_range"),
+        groups=("Range", "hitting_base", "Club", "Menu", "hitting_range"),
         note="hit balls",
-        phrases=("clear tracer", "show menu", "cancel menu"),
+        phrases=("clear tracer", "change wind"),
     ),
     Screen(
         "on_course",
@@ -277,9 +299,8 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "driving_range",
         "Additional Range",
         "additional",
-        groups=("hitting_base", "Club", "hitting_range"),
+        groups=("hitting_base", "Club", "Menu", "hitting_range"),
         note="hit balls",
-        phrases=("show menu", "cancel menu"),
     ),
     # Round settings, reached from On course practice (practice) or Local match (play).
     Screen(
@@ -298,9 +319,9 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "course_practice",
         "Course Practice",
         "round_settings_practice",
-        groups=("Aim", "View", "hitting_base", "Club", "hitting_course"),
+        groups=("Aim", "View", "hitting_base", "Club", "Menu", "hitting_course"),
         # Only on course practice: 8 goes to the ball, 9 and 0 move between holes. Place ball is here too.
-        phrases=("place ball grid", "place pin grid", "go to ball", "previous hole", "next hole", "clear tracer"),
+        phrases=("place ball", "place pin", "go to ball", "previous hole", "next hole", "clear tracer", "change wind", "change hole"),
     ),
     Screen(
         "round_settings_play",
@@ -316,8 +337,8 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
         "play",
         "Course play",
         "round_settings_play",
-        groups=("Aim", "View", "hitting_base", "Club", "hitting_course"),
-        phrases=("toggle scorecard",),  # course play only, not course practice
+        groups=("Aim", "View", "hitting_base", "Club", "Menu", "hitting_course"),
+        phrases=(f"{TOGGLE} scorecard",),  # course play only, not course practice
         note="hit balls",
     ),
 )
@@ -385,6 +406,13 @@ PANELS: dict[str, tuple[str, ...]] = {
     ),
     # The dialog that opens when END ROUND is pressed: it waits for confirm (cancel is not wired yet).
     "end_round_confirm": ("confirm", "cancel"),
+    # The wind panel: its own grammar while it is open. "close" clicks the wind speed again.
+    "wind_panel": ("change direction", "change strength", "stop", "close"),
+    # The marker: while it is held, only these listen. "cancel" releases the button and leaves the panel.
+    "marker_panel": ("left", "right", "up", "down", "stop", "place marker", "cancel marker", f"{TOGGLE} map"),
+    # The change hole panel on course practice: a hole number clicks it, cancel closes it.
+    "hole_panel": ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+                   "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "cancel"),
 }
 
 
@@ -397,9 +425,15 @@ PANEL_GROUP_NAMES: tuple[str, ...] = tuple(panel_group(key) for key in PANELS)
 PANEL_NAMES: dict[str, str] = {
     "driving_preferences_panel": "Driving Preferences",
     "end_round_confirm": "End round confirm",
+    "wind_panel": "Wind",
+    "marker_panel": "Marker",
+    "hole_panel": "Change hole",
 }  # what the tree box says
 PANEL_PARENTS: dict[str, str] = {
     "driving_preferences_panel": "range",
+    "wind_panel": "range",
+    "marker_panel": "play",
+    "hole_panel": "course_practice",
     "end_round_confirm": "play",  # where its box sits in the tree; it opens from several screens (see PANEL_SCREEN_ONLY)
 }
 # Panels that close when the app is on another screen. Others stay open wherever they were opened.

@@ -5,6 +5,7 @@ app/gspro_legend.py.
 
 import ctypes
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -14,9 +15,10 @@ from app import text_entry  # no Qt here: the listener tells the window to draw 
 from app.clicks import click
 from app.connector_ui import _point, client_rect, find_window
 from app.focus import _force_foreground
-from app.gspro_courses import gspro_course_count, sync_from_gspro
+from app.gspro_courses import courses_matching, gspro_course_count, sync_from_gspro
 from app.gspro_sequences import after_row_play, current_screen
 from app.gspro_ui import GSPRO_TITLE, SEARCH_BOX
+from app.grammar_words import NAV, TOGGLE
 
 log = logging.getLogger(__name__)
 
@@ -35,22 +37,121 @@ def on_download_done(hook: Callable[[], None]) -> None:
 # The Download button of each row, as fractions of the GSPro window. The first row is the one at the top of
 # the list; the rows are one step apart. Read from the on_course_practice screenshots.
 DOWNLOAD_X = 0.61
-FIRST_ROW_Y = 0.22
+# The Play/Download button's colour is read here, at its left edge: the label in the middle is white and would
+# look like neither Play nor Download. Sampled on the Play buttons at 0.585-0.595 of the width.
+BUTTON_EDGE_X = 0.59
+FIRST_ROW_Y = 0.2061  # 30 px above the first reading (0.22 of a 2160 px window); found by testing on the favorite hearts
 ROW_STEP = 0.09
 
 DOWNLOAD_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
-DOWNLOAD_PHRASES = tuple(f"download {word}" for word in DOWNLOAD_WORDS)
+DOWNLOAD_PHRASES = tuple(f"download row {word}" for word in DOWNLOAD_WORDS)
 DOWNLOAD_NUMBER: dict[str, int] = {phrase: index + 1 for index, phrase in enumerate(DOWNLOAD_PHRASES)}
-PLAY_PHRASES = tuple(f"play {word}" for word in DOWNLOAD_WORDS)  # the same row buttons, for installed courses
+PLAY_PHRASES = tuple(f"play row {word}" for word in DOWNLOAD_WORDS)  # the same row buttons, for installed courses
 PLAY_NUMBER: dict[str, int] = {phrase: index + 1 for index, phrase in enumerate(PLAY_PHRASES)}
 PLAY_NOW_PHRASES = tuple(f"{phrase} now" for phrase in PLAY_PHRASES)  # the same, and press PLAY on round settings too
 PLAY_NOW_NUMBER: dict[str, int] = {phrase: index + 1 for index, phrase in enumerate(PLAY_NOW_PHRASES)}
-PHRASES = ("start filter", "stop filter", "backspace", *DOWNLOAD_PHRASES, *PLAY_PHRASES, *PLAY_NOW_PHRASES)
+# Course notes: the icon at the left of each row's favourite heart opens the panel for that course. Positions are
+# fractions of the GSPro window, read from the show notes screenshots (Read More, the panel's X, Play, round
+# history, and the two modal close buttons).
+NOTES_X = 0.4755
+PANEL_CLOSE = (0.9605, 0.1984)
+READ_MORE = (0.935, 0.634)
+PANEL_PLAY = (0.833, 0.867)
+ROUND_HISTORY = (0.968, 0.764)
+DESCRIPTION_CLOSE = (0.740, 0.667)
+HISTORY_CLOSE = (0.660, 0.257)
+NOTES_PHRASES = tuple(f"show notes {word}" for word in DOWNLOAD_WORDS)
+NOTES_NUMBER: dict[str, int] = {phrase: index + 1 for index, phrase in enumerate(NOTES_PHRASES)}
+
+# Which part of the course panel is open: None (none), "panel" (the course panel), "description" (Read More),
+# or "history" (latest scores). Cancel closes the innermost one.
+_panel: str | None = None
+
+
+def panel_open() -> bool:
+    return _panel is not None
+
+
+def forget_panel() -> None:
+    """GSPro left the course list, so the panel is not open any more (its state is dropped, not clicked)."""
+    global _panel
+    _panel = None
+
+
+# The favourite heart of each row, as a fraction of the GSPro window width (the same rows as the Download buttons).
+# Read from on_course_practice.png: the heart is at about 1025 of 2000 across.
+FAVORITE_X = 0.5125
+FAVORITE_PHRASES = tuple(f"{TOGGLE} favorite row {word}" for word in DOWNLOAD_WORDS)
+FAVORITE_NUMBER: dict[str, int] = {phrase: index + 1 for index, phrase in enumerate(FAVORITE_PHRASES)}
+PHRASES = (
+    f"{NAV} filter",
+    "stop filter",
+    "backspace",
+    *DOWNLOAD_PHRASES,
+    *PLAY_PHRASES,
+    *PLAY_NOW_PHRASES,
+    *FAVORITE_PHRASES,
+    *NOTES_PHRASES,
+    "read more",
+)
+# Heard only while the show notes panel is open, because they are also commands elsewhere ("close", "cancel").
+PANEL_PHRASES = ("cancel", "close", "read more", "latest scores", "play course", "play course now")
+
+
+def panel_action(phrase: str) -> str:
+    """Open or close the show notes panel and its parts. The state changes here; the clicks run in the background."""
+    global _panel
+    after_play = False
+    then_now = False
+    if phrase in NOTES_NUMBER:
+        number = NOTES_NUMBER[phrase]
+        target = (NOTES_X, FIRST_ROW_Y + (number - 1) * ROW_STEP)
+        _panel = "panel"
+    elif phrase == "read more" and _panel == "panel":
+        target = READ_MORE
+        _panel = "description"
+    elif phrase == "latest scores" and _panel == "panel":
+        target = ROUND_HISTORY
+        _panel = "history"
+    elif phrase == "cancel" and _panel is not None:
+        if _panel == "history":
+            target, _panel = HISTORY_CLOSE, "panel"
+        elif _panel == "description":
+            target, _panel = DESCRIPTION_CLOSE, "panel"
+        else:
+            target, _panel = PANEL_CLOSE, None
+    elif phrase == "close" and _panel == "description":
+        target, _panel = DESCRIPTION_CLOSE, "panel"
+    elif phrase in ("play course", "play course now") and _panel == "panel":
+        target, _panel = PANEL_PLAY, None
+        after_play = True  # round settings opens; "play course now" also presses its PLAY
+        then_now = phrase == "play course now"
+    else:
+        return f"{phrase}: not in the course panel"
+    threading.Thread(
+        target=_panel_click, args=(target, phrase, after_play, then_now), daemon=True, name="gspraudio-panel"
+    ).start()
+    return f"{phrase}: working"
+
+
+def _panel_click(target: tuple[float, float], phrase: str, after_play: bool, then_now: bool) -> None:
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None or not _force_foreground(hwnd):
+        log.info("%s: GSPro not in front; not clicked", phrase)
+        return
+    x, y = _point(client_rect(hwnd), target)
+    click(x, y, phrase)
+    if after_play:
+        from app.gspro_sequences import after_row_play
+
+        log.info("%s: %s", phrase, after_row_play(then_now=then_now))
 
 
 def handle(phrase: str) -> str:
     """Run one chooser command. Returns the note to show. Letters arrive as NATO words while the filter is on."""
-    if phrase == "start filter":
+    if phrase in NOTES_NUMBER or phrase in PANEL_PHRASES:
+        return panel_action(phrase)
+    if phrase == f"{NAV} filter":
         return start_filter()
     if phrase == "stop filter":
         return stop_filter()
@@ -62,19 +163,42 @@ def handle(phrase: str) -> str:
         return play(PLAY_NUMBER[phrase], then_now=False)
     if phrase in PLAY_NOW_NUMBER:
         return play(PLAY_NOW_NUMBER[phrase], then_now=True)
+    if phrase in FAVORITE_NUMBER:
+        return favorite(FAVORITE_NUMBER[phrase])
     if text_entry.active() and text_entry.accepts(phrase):
         text_entry.type_phrase(phrase)
-        return f"Filter: {text_entry.typed()}"
+        return _narrowed()
     return ""
+
+
+def _key(text: str) -> str:
+    """Letters and digits only, lower case: spaces and punctuation do not count when matching."""
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _narrowed() -> str:
+    """After each letter: when only one course still matches (name, location or designer, as GSPro's filter
+    does), the filter has done its job. It stops, and that course is row one, so "play row one" or "show notes one"
+    is what comes next."""
+    typed = text_entry.typed()
+    if not _key(typed):
+        return f"Filter: {typed}"
+    matches = courses_matching(typed)
+    if not matches:
+        return f"Filter: {typed}: no course matches"
+    if len(matches) == 1:
+        text_entry.stop()
+        return f"Filter: {typed}: one course, {matches[0]}. Say play row one or show notes one"
+    return f"Filter: {typed} ({len(matches)} courses)"
 
 
 def start_filter() -> str:
     if current_screen() != "on_course":
-        return "start filter: say on course practice first"
+        return f"{NAV} filter: say on course practice first"
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None or not _force_foreground(hwnd):
-        return "start filter: GSPro not in front"
-    click(*_point(client_rect(hwnd), SEARCH_BOX), "start filter: search box")
+        return f"{NAV} filter: GSPro not in front"
+    click(*_point(client_rect(hwnd), SEARCH_BOX), f"{NAV} filter: search box")
     text_entry.start()
     return "Filter on: say a letter, or backspace"
 
@@ -86,7 +210,7 @@ def stop_filter() -> str:
 
 def backspace() -> str:
     if not text_entry.active():
-        return "backspace: say start filter first"
+        return f"backspace: say {NAV} filter first"
     if not text_entry.backspace():
         return "backspace: nothing typed to delete"
     return f"Filter: {text_entry.typed()}"
@@ -96,6 +220,21 @@ def download(number: int) -> str:
     """Click the Download button of row number. Runs in the background, since the clicks take a moment."""
     threading.Thread(target=_download_now, args=(number,), daemon=True, name="gspraudio-download").start()
     return f"download {number}: working"
+
+
+def favorite(number: int) -> str:
+    """Click the favourite heart of row number, which turns that course's favourite on or off. Runs in the background."""
+    threading.Thread(target=_favorite_now, args=(number,), daemon=True, name="gspraudio-favorite").start()
+    return f"{TOGGLE} favorite {number}: working"
+
+
+def _favorite_now(number: int) -> None:
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None or not _force_foreground(hwnd):
+        log.info(f"{TOGGLE} favorite %d: GSPro not in front; not clicked", number)
+        return
+    x, y = _point(client_rect(hwnd), (FAVORITE_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
+    click(x, y, f"{TOGGLE} favorite {number}")
 
 
 def play(number: int, then_now: bool) -> str:
@@ -110,8 +249,10 @@ def _play_now(number: int, then_now: bool) -> None:
     if hwnd is None or not _force_foreground(hwnd):
         log.info("play %d: GSPro not in front; not clicked", number)
         return
-    x, y = _point(client_rect(hwnd), (DOWNLOAD_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
-    if not _is_play_button(x, y):
+    rect = client_rect(hwnd)
+    x, y = _point(rect, (DOWNLOAD_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
+    edge_x, edge_y = _point(rect, (BUTTON_EDGE_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
+    if not _is_play_button(edge_x, edge_y):
         log.info("play %d: that row shows Download (not installed); not clicked", number)
         return
     click(x, y, f"play {number}")
@@ -123,8 +264,10 @@ def _download_now(number: int) -> None:
     if hwnd is None or not _force_foreground(hwnd):
         log.info("download %d: GSPro not in front; not clicked", number)
         return
-    x, y = _point(client_rect(hwnd), (DOWNLOAD_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
-    if _is_play_button(x, y):
+    rect = client_rect(hwnd)
+    x, y = _point(rect, (DOWNLOAD_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
+    edge_x, edge_y = _point(rect, (BUTTON_EDGE_X, FIRST_ROW_Y + (number - 1) * ROW_STEP))
+    if _is_play_button(edge_x, edge_y):
         log.info("download %d: that row shows Play (already installed); not clicked", number)
         return
     try:

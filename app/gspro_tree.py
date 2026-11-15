@@ -15,6 +15,7 @@ Only the screen key and the sequence names are used by the app. Phrases are what
 from dataclasses import dataclass
 
 from app.prefs import get_bool
+from app.grammar_words import NAV, TOGGLE
 
 DONE = "done"
 NOT_DONE = "not done"
@@ -67,8 +68,8 @@ SHOW_INSTALLED = Action("Show installed", "show installed", ("show installed",))
 CLEAR_COURSE = Action("Clear course search", "clear filter", ("clear filter",))
 SHOW_MENU = Action("Show menu", "show menu", ("show menu",), shot="training_screen.png")
 CANCEL_MENU = Action("Cancel menu", "cancel menu", ("cancel menu",))
-EXPAND_MAP = Action("Map resize", "map resize", (), shot="mini_map_expanded.png")  # keystroke S, not a click
-PLACE_MARKER = Action("Marker place", "marker place", ("marker place",))
+EXPAND_MAP = Action("Map resize", f"{TOGGLE} map", (), shot="mini_map_expanded.png")  # keystroke S, not a click
+PLACE_MARKER = Action("Place marker", "place marker", ("place marker",))
 SHRINK_MAP = Action("Shrink map", "shrink map", ())  # keystroke S, not a click
 CHANGE_DISTANCE = Action("Change driving range distance", "change driving range distance", ("change driving range distance",), shot="driving_range_distance_dialog.png")
 END_ROUND = Action(
@@ -85,8 +86,8 @@ SCREENS: tuple[Screen, ...] = (
         "local_match",
         "Local match",
         "home",
-        "play screen",
-        ("play screen",),
+        f"{NAV} play",
+        (f"{NAV} play",),
         actions=(PLAY_COURSE, CLEAR_COURSE, SHOW_FAVORITES, SHOW_INSTALLED, BACK, PLAYERS, SETTINGS),
         shot="local_match.png",
     ),
@@ -94,20 +95,20 @@ SCREENS: tuple[Screen, ...] = (
         "practice",
         "Practice",
         "home",
-        "practice screen",
-        ("practice screen",),
+        f"{NAV} practice",
+        (f"{NAV} practice",),
         actions=(BACK, PLAYERS, SETTINGS),
         shot="practice_screen.png",
     ),
-    Screen("challenges", "Challenges", "home", "challenges screen"),
-    Screen("tournaments", "Tournaments", "home", "tournaments screen"),
+    Screen("challenges", "Challenges", "home", f"{NAV} challenges"),
+    Screen("tournaments", "Tournaments", "home", f"{NAV} tournaments"),
     Screen("online", "Online match", "home", "online match"),
     Screen(
         "range",
         "GSPro Range",
         "practice",
-        "gspro practice range",
-        ("gspro practice range", "gspro practice range now"),
+        f"{NAV} range",
+        (f"{NAV} range", f"{NAV} range now"),
         actions=(CHANGE_DISTANCE, END_ROUND),
         shot="gspro_practice_range_screen.png",
     ),
@@ -115,8 +116,8 @@ SCREENS: tuple[Screen, ...] = (
         "on_course",
         "On course practice",
         "practice",
-        "on course practice",
-        ("on course practice", "on course practice now"),
+        f"{NAV} on course practice",
+        (f"{NAV} on course practice", f"{NAV} on course practice now"),
         actions=(PLAY_COURSE, CLEAR_COURSE, SHOW_FAVORITES, SHOW_INSTALLED, BACK, PLAYERS, SETTINGS),
         shot="on_course_practice.png",
     ),
@@ -124,8 +125,8 @@ SCREENS: tuple[Screen, ...] = (
         "additional",
         "Additional Driving Ranges",
         "practice",
-        "additional ranges",
-        ("additional ranges", "additional ranges now"),
+        f"{NAV} additional ranges",
+        (f"{NAV} additional ranges", f"{NAV} additional ranges now"),
         actions=(BACK, PLAYERS, SETTINGS),
         shot="additional_driving_ranges_screen.png",
     ),
@@ -182,7 +183,7 @@ _BY_KEY = {screen.key: screen for screen in SCREENS}
 # "sync to <screen>" tells the app which screen GSPro is on, when it has drifted out of sync.
 # It clicks nothing. The phrase maps to a screen key.
 SYNC_PHRASES: dict[str, str] = {
-    "sync to start screen": "home",
+    "sync to home screen": "home",
     "sync to practice screen": "practice",
     "sync to gspro practice range screen": "range",
     "sync to on course practice screen": "on_course",

@@ -37,10 +37,11 @@ _overlay: QWidget | None = None
 _region: Region = FULL
 _level = 0
 _first: int | None = None  # the column word, waiting for its row word
+_undo: list[tuple[Region, int, int | None]] = []  # the region, pass and column waiting for a row, before each word
 _on_final: Callable[[float, float], None] | None = None
 
 
-COLUMN_SHADE = QColor(200, 200, 200, 40)  # a very light grey, see-through, for every other column
+COLUMN_SHADE = QColor(200, 200, 200, 40)  # a very light grey, see-through: every other column, or the one said
 CHECKER_SHADE = QColor(200, 200, 200, 150)  # the 4 by 4 checkerboard: less see-through, so it shows over the course
 
 
@@ -70,6 +71,7 @@ class _Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.region: Region = FULL
         self.level = 0  # which pass is showing: 0 is the 26 by 26 grid, 1 the 4 by 4
+        self.highlight: int | None = None  # the column just called out, waiting for its row; shaded alone
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt name)
         cells = LEVEL_CELLS[self.level]
@@ -79,6 +81,25 @@ class _Overlay(QWidget):
         w, h = (right - left) * width, (bottom - top) * height
         cell_w, cell_h = w / cells, h / cells
         painter = QPainter(self)
+        if self.level == 1 and self.highlight is not None:
+            # The 4 by 4 pass after its column is said: only that column, its cells shaded alternately. The other
+            # columns are hidden.
+            col = self.highlight
+            if col < cells:
+                col_x = x0 + cell_w * col
+                for row in range(cells):
+                    if (col + row) % 2 == 0:
+                        painter.fillRect(int(col_x), int(y0 + cell_h * row), int(cell_w), int(cell_h), CHECKER_SHADE)
+                pen = QPen(QColor(255, 255, 255, 60))
+                pen.setWidth(1)
+                painter.setPen(pen)
+                painter.drawLine(int(col_x), int(y0), int(col_x), int(y0 + h))
+                painter.drawLine(int(col_x + cell_w), int(y0), int(col_x + cell_w), int(y0 + h))
+                for row in range(cells + 1):
+                    y = y0 + cell_h * row
+                    painter.drawLine(int(col_x), int(y), int(col_x + cell_w), int(y))
+            painter.end()
+            return
         # The lines are see-through so GSPro shows underneath. The 4 by 4 pass sits close over the cells
         # of the first, so it is fainter than the 26 by 26 but a little less transparent than before.
         line_alpha, label_alpha = (90, 150) if self.level == 0 else (60, 100)
@@ -87,7 +108,11 @@ class _Overlay(QWidget):
         painter.setPen(pen)
         for i in range(cells + 1):
             x = x0 + cell_w * i
-            painter.drawLine(int(x), int(y0), int(x), int(y0 + h))
+            # On the 26 by 26 pass, once a column is said only its two edges are drawn: the other column lines are hidden.
+            if self.level == 0 and self.highlight is not None and i not in (self.highlight, self.highlight + 1):
+                pass
+            else:
+                painter.drawLine(int(x), int(y0), int(x), int(y0 + h))
             y = y0 + cell_h * i
             painter.drawLine(int(x0), int(y), int(x0 + w), int(y))
         font = QFont()
@@ -106,8 +131,11 @@ class _Overlay(QWidget):
                         )
             painter.end()
             return
-        for i in range(0, cells, 2):  # every other column is shaded, so it is easy to tell which column you are in
-            painter.fillRect(int(x0 + cell_w * i), int(y0), int(cell_w), int(h), COLUMN_SHADE)
+        if self.highlight is None:
+            for i in range(0, cells, 2):  # before a column is said: every other column, so the columns are easy to count
+                painter.fillRect(int(x0 + cell_w * i), int(y0), int(cell_w), int(h), COLUMN_SHADE)
+        elif self.highlight < cells:
+            painter.fillRect(int(x0 + cell_w * self.highlight), int(y0), int(cell_w), int(h), COLUMN_SHADE)  # the column said
         painter.setPen(white)
         metrics = painter.fontMetrics()
         for i in range(cells):
@@ -159,12 +187,14 @@ def start(on_final: Callable[[float, float], None] | None = None, region: Region
     global _region, _level, _first, _on_final
     _ensure()
     _region, _level, _first = region, 0, None
+    _undo.clear()
     _on_final = on_final or _click_point
     if not _place():
         log.info("grid: GSPro window not found")
         return
     _overlay.region = _region
     _overlay.level = 0
+    _overlay.highlight = None
     _overlay.update()
     _overlay.show()  # shown first, so the position set below is not overwritten by Qt
     _place()
@@ -173,6 +203,9 @@ def start(on_final: Callable[[float, float], None] | None = None, region: Region
 def stop() -> None:
     global _first, _level, _region
     _first, _level, _region = None, 0, FULL
+    _undo.clear()
+    if _overlay is not None:
+        _overlay.highlight = None
     if _overlay is not None:
         _overlay.hide()
 
@@ -191,11 +224,15 @@ def pick(index: int) -> None:
     if index >= cells:
         log.info("grid: %d is past the %d by %d grid; ignored", index, cells, cells)
         return
+    _undo.append((_region, _level, _first))  # so "redo" can take this word back
     if _first is None:
         _first = index
+        _overlay.highlight = index  # shade the column just called out
+        _overlay.update()
         return
     column, row = _first, cells - 1 - index  # the row word counts up from the bottom, to match the labels
     _first = None
+    _overlay.highlight = None
     left, top, right, bottom = _region
     cell_w, cell_h = (right - left) / cells, (bottom - top) / cells
     _region = (left + column * cell_w, top + row * cell_h, left + (column + 1) * cell_w, top + (row + 1) * cell_h)
@@ -210,6 +247,30 @@ def pick(index: int) -> None:
     stop()
     if _on_final is not None:
         _on_final(cx, cy)
+
+
+def redo() -> None:
+    """Take back the last letter, one at a time: each "redo" undoes one more word, so several can be undone in turn.
+    Says nothing when there is nothing left to undo."""
+    global _region, _level, _first
+    if not is_showing():
+        return
+    if not _undo:
+        log.info("grid: redo; nothing to redo")
+        return
+    _region, _level, _first = _undo.pop()
+    _overlay.region = _region
+    _overlay.level = _level
+    _overlay.highlight = _first
+    _overlay.update()
+    log.info("grid: redo; pass %d, column %s", _level + 1, _first)
+
+
+def map_key() -> None:
+    """Press S to change the mini map's size, and leave the app's map flag alone. The user says "sync map small" or
+    "sync map large" afterwards if the flag no longer matches the screen."""
+    press_keys("s")
+    log.info("grid: map size key pressed; the app's flag is not changed")
 
 
 def _click_point(x: float, y: float) -> None:
@@ -232,7 +293,7 @@ MAP_RESTORE_WAIT_SECONDS = 1.0  # before the S key that makes the map small agai
 PLACE_HOVER_SECONDS = 1.0  # the cursor rests on the picked point before the press, so the ball cursor is there first
 SETTLE_SECONDS = 0.5  # a pause between the point click and the ball icon click, so GSPro takes the first one
 ZOOM_PAUSE_SECONDS = 0.3  # between the zoom in and zoom out taps, so GSPro sees each one
-_placing_flag = False  # True for "place pin grid": the flag is placed with Shift held, not the ball with Ctrl
+_placing_flag = False  # True for "place pin": the flag is placed with Shift held, not the ball with Ctrl
 _restore_small = False  # True while the map is large only for ball placement; it goes back to small after
 
 
@@ -416,5 +477,9 @@ def handle(event: tuple[str, int | None]) -> None:
         _cancel()
     elif action == "pick" and value is not None:
         pick(value)
+    elif action == "redo":
+        redo()
+    elif action == "map":
+        map_key()
     elif action == "place":
         _place_ball(flag=value == "flag")

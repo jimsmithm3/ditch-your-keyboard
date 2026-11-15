@@ -60,11 +60,21 @@ from app.gspro_sequences import (
     flight_mode_toggle,
     marker_active,
     marker_move,
+    HOLE_NUMBER,
+    HOLE_PANEL,
+    cancel_hole,
+    marker_cancel,
+    open_hole_panel,
+    pick_hole,
+    marker_map_key,
     marker_end,
-    marker_start,
+    marker_placing,
+    place_marker,
     marker_stop,
     motion_active,
     SLIDER_PHRASES,
+    close_wind,
+    open_wind,
     slider_start,
     stop_motion,
 )
@@ -94,6 +104,7 @@ from app.commands import (
 from app.paths import resource_path
 from app.prefs import get_pref
 from app.prefs_page import Tuning, load_tuning
+from app.grammar_words import NAV, TOGGLE
 
 log = logging.getLogger(__name__)
 
@@ -162,7 +173,7 @@ class VoiceListener(QObject):
     utterance = Signal(str)  # a finished phrase from the Voice page, before it is matched to a command
     command = Signal(str)
     notice = Signal(str)
-    mode = Signal(bool)  # True when listening, False after "toggle listening" pauses
+    mode = Signal(bool)  # True when listening, False after f"{TOGGLE} listening" pauses
     available = Signal(str)  # the commands dialog: "open", "close", "current" (tab), or "always" (tab)
     grid = Signal(object)  # the numbered grid: ("show", None), ("close", None), or ("pick", digit)
     legend = Signal(object)  # the course filter's letter list: (shown, typed); drawn on the GUI thread
@@ -176,7 +187,7 @@ class VoiceListener(QObject):
         self.bag = Bag()
         self.tuning = tuning or load_tuning()
         self.send_keys = True
-        self.listening = True  # False after "toggle listening" pauses: only "toggle listening" is heard
+        self.listening = True  # False after f"{TOGGLE} listening" pauses: only f"{TOGGLE} listening" is heard
         self._course_grammar_on = False  # the course-name grammar is listened for only on On course practice
         self._screen_groups_on: set[str] = set()  # the per-screen grammars switched on right now
         self._dialog_open = False  # the commands dialog is up, so its tab phrases listen
@@ -212,7 +223,7 @@ class VoiceListener(QObject):
         self.listening = on
         log.info("voice commands %s", "on" if on else "paused")
         self.mode.emit(on)
-        self.notice.emit("Listening" if on else "Paused. Say toggle listening to resume.")
+        self.notice.emit("Listening" if on else f"Paused. Say {TOGGLE} listening to resume.")
 
     def _sync_course_grammar(self, rec) -> None:
         """Listen for course names on the course list screens, and on round settings: "play <course>"
@@ -260,6 +271,10 @@ class VoiceListener(QObject):
                 self.legend.emit((False, ""))
             else:
                 wanted = wanted | {group_grammar("Filter entry")}  # the letters and characters, while the filter is typing
+        if screen != "on_course":
+            course_chooser.forget_panel()  # the course notes panel belongs to the course list
+        elif course_chooser.panel_open():
+            wanted = wanted | {group_grammar("Course notes panel")}  # cancel, close, read more, while it is open
         if self._grid_on and grid_showing():
             wanted = {GRID_GROUP}  # while the grid is showing, only its digit words listen, so club words cannot compete
         if wanted == self._screen_groups_on:
@@ -429,15 +444,15 @@ class VoiceListener(QObject):
                 self.heard.emit(text)
                 self.utterance.emit(text)
                 phrase = match_command(text)
-                if phrase == "toggle listening":
+                if phrase == f"{TOGGLE} listening":
                     self._set_listening(not self.listening)  # paused: this resumes; listening: this pauses
                     return
                 if not self.listening:
-                    return  # paused: only "toggle listening" gets through
+                    return  # paused: only f"{TOGGLE} listening" gets through
                 if phrase and (not wake_required or contains_wake(text) or armed_until):
                     armed_until = 0.0
                     note = ""
-                    if self._grid_on and phrase not in GRID_PHRASES and phrase != "hide grid":
+                    if self._grid_on and phrase not in GRID_PHRASES and phrase != "hide place":
                         # Any other command ends the grid, so the screen's own grammar can come back.
                         self._grid_on = False
                         self.grid.emit(("close", None))
@@ -466,6 +481,12 @@ class VoiceListener(QObject):
                                     sent = True
                             elif pending and not had_hold:
                                 sent = False
+                    elif phrase == "change wind":
+                        move = None
+                        sent = False
+                        release()
+                        label = "wind"
+                        note = open_wind()
                     elif phrase == "stop" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES:
                         # "stop" ends a marker or slider drag that is moving; the other phrases start one.
                         move = None
@@ -479,29 +500,72 @@ class VoiceListener(QObject):
                             note = flight_mode_toggle()
                         else:
                             note = marker_move(phrase)
-                    elif phrase in ("place ball grid", "place pin grid"):
+                    elif phrase == "place marker":
                         move = None
                         sent = False
-                        flag = phrase == "place pin grid"
+                        release()
+                        label = "marker"
+                        note = marker_end() if marker_placing() else place_marker()
+                    elif phrase == "change hole":
+                        move = None
+                        sent = False
+                        release()
+                        label = "hole"
+                        note = open_hole_panel()
+                    elif current_panel() == HOLE_PANEL and phrase in HOLE_NUMBER:
+                        move = None
+                        sent = False
+                        release()
+                        label = "hole"
+                        note = pick_hole(HOLE_NUMBER[phrase])
+                    elif phrase == "cancel" and current_panel() == HOLE_PANEL:
+                        move = None
+                        sent = False
+                        release()
+                        label = "hole"
+                        note = cancel_hole()
+                    elif phrase == f"{TOGGLE} map" and current_panel() == "marker_panel":
+                        # S only: the app's map flag is not changed, so the user can sync it afterwards.
+                        move = None
+                        sent = False
+                        release()
+                        label = "marker"
+                        note = marker_map_key()
+                    elif phrase == "cancel marker" and current_panel() == "marker_panel":
+                        # Releases the button where the marker is, makes the map small again if place marker made it large,
+                        # and leaves the marker panel.
+                        move = None
+                        sent = False
+                        release()
+                        label = "marker"
+                        note = marker_cancel()
+                    elif phrase in ("place ball", "place pin"):
+                        move = None
+                        sent = False
+                        flag = phrase == "place pin"
                         label = "flag" if flag else "ball"
                         self._grid_on = True  # the grid's words listen while it is up
                         self.grid.emit(("place", "flag" if flag else "ball"))
                         note = f"Place {label}: click the {label} icon, then pick the point"
-                    elif phrase == "hide grid":
+                    elif phrase == "hide place":
                         move = None
                         sent = False
                         label = "grid"
                         self._grid_on = False
                         self.grid.emit(("close", None))
                         note = "Grid closed"
-                    elif phrase == "cancel grid":
+                    elif phrase == "cancel place":
                         move = None
                         sent = False
                         label = "grid"
                         self._grid_on = False
                         self.grid.emit(("cancel", None))
                         note = "Grid cancelled"
-                    elif phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)):
+                    elif (
+                        phrase in course_chooser.PHRASES
+                        or (course_chooser.panel_open() and phrase in course_chooser.PANEL_PHRASES)
+                        or (text_entry.active() and text_entry.accepts(phrase))
+                    ):
                         # The course filter: its typing and the download-by-number commands (app/course_chooser.py).
                         move = None
                         sent = False
@@ -509,6 +573,18 @@ class VoiceListener(QObject):
                         label = phrase
                         note = course_chooser.handle(phrase)
                         self.legend.emit((text_entry.active(), text_entry.typed()))
+                    elif self._grid_on and phrase == "toggle map":
+                        move = None
+                        sent = False
+                        label = "grid"
+                        self.grid.emit(("map", None))
+                        note = "Place: map size key pressed; flag unchanged"
+                    elif self._grid_on and phrase == "redo":
+                        move = None
+                        sent = False
+                        label = "grid"
+                        self.grid.emit(("redo", None))
+                        note = "Grid: redo"
                     elif self._grid_on and phrase in GRID_PHRASES:
                         move = None
                         sent = False
@@ -528,6 +604,12 @@ class VoiceListener(QObject):
                         label = "dialog"
                         self.available.emit("current" if phrase == "show current grammar" else "always")
                         note = "Showing " + ("the current grammar" if phrase == "show current grammar" else "the always-on commands")
+                    elif phrase == "close" and current_panel() == "wind_panel":
+                        move = None
+                        sent = False
+                        release()
+                        label = "wind"
+                        note = close_wind()
                     elif phrase == "close":
                         move = None
                         release()
@@ -549,7 +631,7 @@ class VoiceListener(QObject):
                         move = None
                         sent = False  # no keys are sent; the note says what happened
                         release()
-                        label = "gspro start"
+                        label = f"{NAV} gspro"
                         note = start_play_golf(on_done=self.notice.emit)
                     elif phrase == "play course":
                         # On round settings, the course is already set up: press its PLAY. No name is needed.
@@ -558,7 +640,7 @@ class VoiceListener(QObject):
                         release()
                         label = "play course"
                         note = run_course_in_background("", on_done=self.notice.emit)
-                    elif phrase.startswith(COURSE_PHRASE) and phrase not in SEQUENCES:  # "play screen" is a sequence
+                    elif phrase.startswith(COURSE_PHRASE) and phrase not in SEQUENCES:  # "click play" is a sequence
                         move = None
                         sent = False
                         release()
@@ -605,7 +687,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase) or shadows.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase in ("open commands", "close commands") or phrase in DIALOG_PHRASES or phrase in ("hide grid", "place ball grid", "place pin grid") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase in ("open commands", "close commands") or phrase in DIALOG_PHRASES or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)
@@ -619,7 +701,7 @@ class VoiceListener(QObject):
                                 press_times(move.keys)
                     else:
                         binding = COMMANDS[phrase]
-                        if phrase == "toggle ui":
+                        if phrase == f"{TOGGLE} ui":
                             # One phrase for both: Esc shows the interface again, H hides it.
                             binding = "esc" if ui_hidden() else "h"
                         if (is_continue(phrase) or holds_key(phrase)) and isinstance(binding, str):
@@ -669,7 +751,7 @@ class VoiceListener(QObject):
                         if sent:
                             toggle_stop(phrase, binding)
                             # Esc (show ui, open menu) always leaves the interface showing.
-                            if phrase == "toggle ui":
+                            if phrase == f"{TOGGLE} ui":
                                 set_ui_hidden(binding == "h")
                             elif binding == "esc":
                                 set_ui_hidden(False)

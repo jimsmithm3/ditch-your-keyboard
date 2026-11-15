@@ -9,6 +9,8 @@ Rows, groups and the tree come from gspro_screens.py; the check at the bottom co
 with the tree and commands.
 """
 
+import re
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -244,8 +246,51 @@ def current_rows() -> tuple[str, list[tuple[str, str, str, bool]]]:
     return "GSPro (screen not known)", []
 
 
+_NUMBER_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+# Each family of nine numbered commands (one row per row of the course list) is shown as one line with a range.
+_NUMBERED_FAMILIES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (tuple(f"play row {word} now" for word in _NUMBER_WORDS), "play row [1-9] now"),
+    (tuple(f"play row {word}" for word in _NUMBER_WORDS), "play row [1-9]"),
+    (tuple(f"download row {word}" for word in _NUMBER_WORDS), "download row [1-9]"),
+    (tuple(f"toggle favorite row {word}" for word in _NUMBER_WORDS), "toggle favorite row [1-9]"),
+    (tuple(f"shadow {word}" for word in ("one", "two", "three", "four", "five")), "shadow [1-5]"),
+)
+
+
+def collapse_names(names: list[str]) -> list[str]:
+    """The same collapse for a plain list of phrases (the Active commands columns): a complete family is shown once
+    as its range, where its first member was."""
+    for members, shown_as in _NUMBERED_FAMILIES:
+        found = [index for index, name in enumerate(names) if name in members]
+        if len(found) != len(members):
+            continue
+        dropped = set(found[1:])
+        names = [shown_as if index == found[0] else name for index, name in enumerate(names) if index not in dropped]
+    return names
+
+
+def _collapse_numbered(rows: list[tuple[str, str, str, bool]]) -> list[tuple[str, str, str, bool]]:
+    """Replace each complete family of nine numbered rows with one row, shown with a [1-9] range. A family with
+    any row missing is left as it is."""
+    for members, shown_as in _NUMBERED_FAMILIES:
+        found = [index for index, row in enumerate(rows) if row[0] in members]
+        if len(found) != len(members):
+            continue
+        first = rows[found[0]]
+        collapsed = (
+            shown_as,
+            first[1],
+            re.sub(r"\brow 1\b", "rows 1-9", first[2]),
+            all(rows[index][3] for index in found),
+        )
+        dropped = set(found[1:])
+        rows = [collapsed if index == found[0] else row for index, row in enumerate(rows) if index not in dropped]
+    return rows
+
+
 def fill_table(table: QTableWidget, rows: list[tuple[str, str, str, bool]]) -> None:
     """Fill a table with the four columns (Say, Also say, What it does, Wired up) from rows."""
+    rows = _collapse_numbered(rows)
     table.setRowCount(len(rows))
     for row, (say, also, what, wired) in enumerate(rows):
         table.setItem(row, 0, QTableWidgetItem(say))

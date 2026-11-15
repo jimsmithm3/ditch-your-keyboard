@@ -17,6 +17,7 @@ from app.connector_ui import lights
 from app.gspro_sequences import CLOSED, current_screen
 from app.launch import _process_running
 from app.screen_table_dialog import show_screen_table
+from app.grammar_words import NAV, TOGGLE
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ class OverviewPage(QWidget):
         listener.mode.connect(self._on_mode)
 
     def _on_mode(self, on: bool) -> None:
-        self._mode.setText("Voice: listening" if on else "Voice: PAUSED. Say toggle listening.")
+        self._mode.setText("Voice: listening" if on else f"Voice: PAUSED. Say {TOGGLE} listening.")
         self._mode.setStyleSheet("font-size: 22px; font-weight: bold; color: " + ("#2e7d32;" if on else "#c62828;"))
 
     def _poll(self) -> None:
@@ -136,7 +137,7 @@ class OverviewPage(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
         if current_screen() == CLOSED:
-            self._screen_title.setText("GSPro is not running. Say \"gspro start\".")
+            self._screen_title.setText(f"GSPro is not running. Say {NAV} gspro.")
             self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
             return
         current = tree.screen(current_screen())

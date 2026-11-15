@@ -43,7 +43,7 @@ from app.gspro_screens import (
     screen_phrases,
 )
 from app.prefs import get_bool, set_bool
-from app.screen_table_dialog import show_screen_table
+from app.screen_table_dialog import collapse_names, show_screen_table
 
 _UNWIRED = QBrush(QColor(255, 214, 214))
 _COLUMNS = ("Area", "Keystroke", "Voice command", "Description", "Close", "Continue", "Tested")
@@ -191,7 +191,7 @@ def _primaries(phrases) -> list[str]:
     for phrase in phrases:
         if primary(phrase) == phrase and shown(phrase) not in names:
             names.append(shown(phrase))
-    return sorted(names, key=str.lower)  # alphabetical, so a phrase is easy to find
+    return sorted(collapse_names(names), key=str.lower)  # alphabetical, so a phrase is easy to find
 
 
 def _group_column(group: str, spoken) -> tuple[str, list[str]]:

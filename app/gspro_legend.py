@@ -15,7 +15,7 @@ from app.gspro_ui import GSPRO_TITLE
 
 # The open column, as fractions of the GSPro window's width and height.
 LEFT, RIGHT = 0.525, 0.575  # the column the list was first drawn in, centred on the note icon
-SHIFT_LEFT_PX = 30  # the list starts this far left of that column, so it sits left of the note icon
+SHIFT_LEFT_PX = -10  # the list starts this far left of that column; negative moves it right (40 px right of the old 30 px left)
 TOP, BOTTOM = 0.19, 0.99
 
 _widget: QWidget | None = None
