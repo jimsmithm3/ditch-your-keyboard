@@ -179,7 +179,7 @@ class OverviewPage(QWidget):
         self._render_screen()
 
     def _on_heard(self, text: str) -> None:
-        # Count the same phrase said again in a row, so "close commands x2" shows two were heard.
+        # Count the same phrase said again in a row, so "toggle commands x2" shows two were heard.
         if text == getattr(self, "_heard_text", None):
             self._heard_count = getattr(self, "_heard_count", 1) + 1
         else:

@@ -227,8 +227,7 @@ GLOBAL: tuple[str, ...] = (
     f"{TOGGLE} keyboard",
     f"{NAV} gspro",
     f"{NAV} screen",
-    "open commands",
-    "close commands",
+    f"{TOGGLE} commands",
     "fullscreen",
 )
 

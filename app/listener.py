@@ -591,11 +591,11 @@ class VoiceListener(QObject):
                         label = "grid"
                         self.grid.emit(("pick", GRID_INDEX[phrase]))
                         note = f"Grid: {phrase}"
-                    elif phrase in ("open commands", "close commands"):
+                    elif phrase == f"{TOGGLE} commands":
                         move = None
                         sent = False
                         label = "dialog"
-                        self._dialog_open = phrase == "open commands"
+                        self._dialog_open = not self._dialog_open  # the same phrase shows the dialog, then closes it
                         self.available.emit("open" if self._dialog_open else "close")
                         note = "Showing the commands" if self._dialog_open else "Commands closed"
                     elif phrase in DIALOG_PHRASES:
@@ -687,7 +687,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase) or shadows.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase in ("open commands", "close commands") or phrase in DIALOG_PHRASES or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase == f"{TOGGLE} commands" or phrase in DIALOG_PHRASES or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)

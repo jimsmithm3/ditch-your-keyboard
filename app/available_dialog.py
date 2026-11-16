@@ -2,8 +2,8 @@
 
 Both tabs use the same four columns as the screen tables: Say, Also say, What it does, Wired up. The
 dialog sits over the top left of the GSPro window. It is click-through and does not take focus, so it
-never blocks a click the sequences make and GSPro keeps the keyboard. "open commands" opens it,
-"close commands" closes it, and "show current grammar" / "show always on" switch the tab while it is open.
+never blocks a click the sequences make and GSPro keeps the keyboard. "toggle commands" opens it,
+"toggle commands" closes it again, and "show current grammar" / "show always on" switch the tab while it is open.
 Look and feel are not final.
 """
 
