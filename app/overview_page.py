@@ -63,8 +63,8 @@ class OverviewPage(QWidget):
         game_row = QHBoxLayout()
         game_row.addWidget(QLabel("Game:"))
         self._game = QComboBox()
-        self._game.addItems(AVAILABLE)
-        self._game.setCurrentText(self._started_with)
+        self._game.addItems(("(none)", *AVAILABLE))
+        self._game.setCurrentText(self._started_with or "(none)")
         self._game.currentTextChanged.connect(self._on_game)
         game_row.addWidget(self._game)
         self._game_note = QLabel("")
@@ -123,8 +123,12 @@ class OverviewPage(QWidget):
         listener.mode.connect(self._on_mode)
 
     def _on_game(self, name: str) -> None:
-        set_active(name)
-        self._game_note.setText("" if name == self._started_with else f"Restart the app to use {name}")
+        chosen = "" if name == "(none)" else name
+        set_active(chosen)
+        if chosen == self._started_with:
+            self._game_note.setText("")
+        else:
+            self._game_note.setText(f"Restart the app to use {name}" if chosen else "Restart the app to turn the game off")
 
     def _on_mode(self, on: bool) -> None:
         self._mode.setText("Voice: listening" if on else f"Voice: PAUSED. Say {TOGGLE} listening.")

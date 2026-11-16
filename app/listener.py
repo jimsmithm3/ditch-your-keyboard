@@ -262,7 +262,7 @@ class VoiceListener(QObject):
         elif screen in RECORDS_BY_KEY:
             wanted = {screen_group(screen)} | grammar_groups_for(screen)
         else:
-            wanted = set()
+            wanted = {group_grammar("Sync")}  # GSPro closed or not a known screen: only the sync words, so it can be told where it is
         if self._dialog_open:
             wanted = wanted | {DIALOG_GROUP}  # the commands dialog's tab phrases, while it is open
         if text_entry.active():

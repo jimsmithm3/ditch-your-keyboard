@@ -19,6 +19,7 @@ from app import course_chooser
 from app.bag_dialog import edit_bag
 from app.gspro_settings import read_map_side
 from app.listener import VoiceListener
+from hfg.active import active
 from app.mic_page import MicSetupPage
 from app.prefs_page import PrefsPage, saved_offset, send_keys_default
 from app.paths import resource_path
@@ -63,8 +64,11 @@ class MainWindow:
         self.shell = build_shell(self.window, self._mic_page, self._prefs_page)
         self.shell.watch(self._on_page)
 
-        self.player_id = choose_player(self.window)
         self.listener = None
+        self.player_id = None
+        if active() != "GSPro":
+            return  # no game chosen: the window opens without listening; pick one on the overview page
+        self.player_id = choose_player(self.window)  # first time with GSPro: asks for the name and bag
         if self.player_id is None:
             return
         self._show_player()
