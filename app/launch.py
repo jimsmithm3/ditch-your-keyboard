@@ -117,7 +117,7 @@ def stop_connector() -> str:
 
 
 def start_play_golf(on_done=None) -> str:
-    """The "start gspro" command: start GSPro and the connector, then click the connector's
+    """The "start application" command: start GSPro and the connector, then click the connector's
     Scan / Connect buttons in the background. on_done(note) reports the setup result."""
     from app.connector_ui import finish_setup_in_background
 

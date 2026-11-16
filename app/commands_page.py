@@ -25,8 +25,6 @@ from app.bag import spoken_phrases
 from app.gspro_courses import course_phrases
 from app.commands import ROWS, Command, key_text, primary, shown
 from app.gspro_screens import (
-    DIALOG_GROUP,
-    DIALOG_PHRASES,
     GLOBAL,
     GRID_GROUP,
     active_groups,
@@ -204,8 +202,6 @@ def _group_column(group: str, spoken) -> tuple[str, list[str]]:
         return grammar_name(group), _primaries(group_phrases(group[len("group:"):], spoken))
     if group == GRID_GROUP:
         return grammar_name(group), _primaries(GRID_PHRASES)
-    if group == DIALOG_GROUP:
-        return grammar_name(group), _primaries(DIALOG_PHRASES)
     if group == "courses":
         return grammar_name(group), _primaries(course_phrases())  # cached, so cheap to read on each refresh
     return grammar_name(group), []
@@ -222,7 +218,7 @@ def _active_columns() -> list[tuple[str, list[str]]]:
 
 def _all_grammars() -> list[str]:
     """Every grammar the app can switch on, by group name."""
-    return [*SCREEN_GROUP_NAMES, *PANEL_GROUP_NAMES, *GROUP_GRAMMAR_NAMES, GRID_GROUP, DIALOG_GROUP]
+    return [*SCREEN_GROUP_NAMES, *PANEL_GROUP_NAMES, *GROUP_GRAMMAR_NAMES, GRID_GROUP]
 
 
 def build_active_page() -> QWidget:

@@ -25,8 +25,6 @@ from app.gspro_screens import (
     SCREEN_GROUP_NAMES,
     grammar_groups_for,
     panel_group,
-    DIALOG_GROUP,
-    DIALOG_PHRASES,
     GRID_GROUP,
     GRID_INDEX,
     GRID_PHRASES,
@@ -39,6 +37,7 @@ from app.debug_press import debug_press_in_background
 from app.gspro_sequences import (
     COURSE_LIST_SCREENS,
     ROUND_SETTINGS_SCREENS,
+    clear_slide,
     current_panel,
     SEQUENCES,
     current_screen,
@@ -48,7 +47,6 @@ from app.gspro_sequences import (
     toggle_map,
     sync_screen,
     run_in_background as run_gspro_sequence,
-    confirm_exit,
     request_exit,
     set_ui_hidden,
     ui_hidden,
@@ -165,7 +163,7 @@ class VoiceListener(QObject):
     command = Signal(str)
     notice = Signal(str)
     mode = Signal(bool)  # True when listening, False after f"{TOGGLE} listening" pauses
-    available = Signal(str)  # the commands dialog: "open", "close", "current" (tab), or "always" (tab)
+    help_boxes = Signal(bool)  # "toggle help": True draws the red boxes over GSPro, False hides them
     grid = Signal(object)  # the numbered grid: ("show", None), ("close", None), or ("pick", digit)
     legend = Signal(object)  # the course filter's letter list: (shown, typed); drawn on the GUI thread
     grammars = Signal(object)  # the grammars listening right now, as a list of readable names (debug box)
@@ -181,7 +179,9 @@ class VoiceListener(QObject):
         self.listening = True  # False after f"{TOGGLE} listening" pauses: only f"{TOGGLE} listening" is heard
         self._course_grammar_on = False  # the course-name grammar is listened for only on On course practice
         self._screen_groups_on: set[str] = set()  # the per-screen grammars switched on right now
-        self._dialog_open = False  # the commands dialog is up, so its tab phrases listen
+        self._help_open = False  # the help boxes are up
+        self._on_course_before = False  # GSPro was on the course list at the last check
+        course_chooser.set_help_hooks(lambda: self.help_boxes.emit(False), lambda: self.help_boxes.emit(self._help_open))
         self._grid_on = False  # the numbered grid is up, so its digit words listen
         # Added to dBFS to get real-scale dB (see calibrate()).
         self.spl_offset = spl_offset
@@ -189,6 +189,22 @@ class VoiceListener(QObject):
         self._commands: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._thread_main, name="ditch-your-keyboard-mic", daemon=True)
         self._started = False
+
+    def _pause_help(self) -> None:
+        """Takes the help boxes down while a GSPro sequence clicks, so they are not drawn on the new screen. The help
+        flag stays on; _after_sequence puts the boxes back on whatever screen the sequence reached."""
+        if self._help_open:
+            self.help_boxes.emit(False)
+
+    def _resume_help(self) -> None:
+        self.help_boxes.emit(self._help_open)  # on again if help is still toggled on
+
+    def _after_sequence(self, note: str) -> None:
+        if self._help_open:
+            self.help_boxes.emit(True)  # on again, as it was read when it was turned on
+        else:
+            self.help_boxes.emit(False)
+        self.notice.emit(note)
 
     def start(self) -> None:
         if not self._started:
@@ -242,6 +258,9 @@ class VoiceListener(QObject):
         """Listen for a screen's own phrases only while GSPro is on that screen. If the screen is
         not known, all the screen grammars are on, as before. If GSPro is closed, none are."""
         screen = current_screen()
+        if screen == "on_course" and not self._on_course_before:
+            course_chooser.check_panel_on_entry()  # the notes panel may have been left open; close it, see course_chooser
+        self._on_course_before = screen == "on_course"
         panel = current_panel()
         if panel is not None:
             wanted = {panel_group(panel)}  # an open panel replaces its screen's grammar until it closes
@@ -251,18 +270,20 @@ class VoiceListener(QObject):
             wanted = {screen_group(screen)} | grammar_groups_for(screen)
         else:
             wanted = {group_grammar("Sync")}  # GSPro closed or not a known screen: only the sync words, so it can be told where it is
-        if self._dialog_open:
-            wanted = wanted | {DIALOG_GROUP}  # the commands dialog's tab phrases, while it is open
         if text_entry.active():
             if screen is not None and screen != "on_course":
                 text_entry.stop()  # the filter belongs to the course chooser; leaving it turns it off
                 self.legend.emit((False, ""))
             else:
-                wanted = wanted | {group_grammar("Filter entry")}  # the letters and characters, while the filter is typing
+                wanted = wanted | {group_grammar("Filter punctuation" if text_entry.punctuation() else "Filter entry")}  # the letters, or the punctuation, while the filter is typing
         if screen != "on_course":
             course_chooser.forget_panel()  # the course notes panel belongs to the course list
+        elif course_chooser.panel_state() == "history":
+            wanted = {group_grammar("Round history panel")}  # a modal dialog: only its cancel listens
+        elif course_chooser.panel_state() == "description":
+            wanted = {group_grammar("Read more panel")}  # a modal dialog: only its close listens
         elif course_chooser.panel_open():
-            wanted = wanted | {group_grammar("Course notes panel")}  # cancel, close, read more, while it is open
+            wanted = {group_grammar("Course notes panel")}  # while the panel is up, only its own words listen; cancel ends it
         if self._grid_on and grid_showing():
             wanted = {GRID_GROUP}  # while the grid is showing, only its digit words listen, so club words cannot compete
         if wanted == self._screen_groups_on:
@@ -440,6 +461,8 @@ class VoiceListener(QObject):
                         self.grid.emit(("close", None))
                     if phrase not in ("close", "stop") and not is_continue(phrase) and not holds_key(phrase):
                         release()
+                    if phrase not in ("stop", "slide left", "slide right"):
+                        clear_slide()  # a slide only follows the change command that put the pointer on the ball
                     if phrase == "stop" and not motion_active():
                         move = None
                         had_hold = holding is not None
@@ -553,6 +576,8 @@ class VoiceListener(QObject):
                         sent = False
                         release()
                         label = phrase
+                        if phrase in course_chooser.ROW_PHRASES:
+                            self._pause_help()  # the help boxes cover the row's Play button, which is read from the screen
                         note = course_chooser.handle(phrase)
                         self.legend.emit((text_entry.active(), text_entry.typed()))
                     elif self._grid_on and phrase == "toggle map":
@@ -573,19 +598,35 @@ class VoiceListener(QObject):
                         label = "grid"
                         self.grid.emit(("pick", GRID_INDEX[phrase]))
                         note = f"Grid: {phrase}"
-                    elif phrase == f"{TOGGLE} commands":
+                    elif phrase in ("help red", "help blue"):
+                        from app.gspro_boxes import set_look
+                        move = None
+                        sent = False
+                        release()
+                        label = "help"
+                        note = set_look(phrase == "help blue")
+                    elif phrase == "refresh help":
+                        move = None
+                        sent = False
+                        release()
+                        label = "help"
+                        if self._help_open:
+                            course_chooser.scan_rows_async()  # reads the rows as they are now, then draws the boxes
+                            note = "Help refreshed"
+                        else:
+                            note = "Help is off: say toggle help first"
+                    elif phrase == f"{TOGGLE} help":
                         move = None
                         sent = False
                         label = "dialog"
-                        self._dialog_open = not self._dialog_open  # the same phrase shows the dialog, then closes it
-                        self.available.emit("open" if self._dialog_open else "close")
-                        note = "Showing the commands" if self._dialog_open else "Commands closed"
-                    elif phrase in DIALOG_PHRASES:
-                        move = None
-                        sent = False
-                        label = "dialog"
-                        self.available.emit("current" if phrase == "show current grammar" else "always")
-                        note = "Showing " + ("the current grammar" if phrase == "show current grammar" else "the always-on commands")
+                        from app.gspro_boxes import is_showing
+                        # The window decides, not the flag: if the boxes were lost, this shows them again.
+                        self._help_open = not is_showing()  # the same phrase shows the boxes, then hides them
+                        if self._help_open:
+                            course_chooser.scan_rows_async()  # read the rows first, so only the right boxes are drawn
+                        else:
+                            self.help_boxes.emit(False)
+                        note = "Showing the help boxes" if self._help_open else "Help closed"
                     elif phrase == "close" and current_panel() == "wind_panel":
                         move = None
                         sent = False
@@ -613,7 +654,7 @@ class VoiceListener(QObject):
                         move = None
                         sent = False  # no keys are sent; the note says what happened
                         release()
-                        label = f"start gspro"
+                        label = f"start application"
                         note = start_play_golf(on_done=self.notice.emit)
                     elif phrase == "play course":
                         # On round settings, the course is already set up: press its PLAY. No name is needed.
@@ -628,6 +669,7 @@ class VoiceListener(QObject):
                         release()
                         label = "play"
                         course, then_now = parse_course(text)
+                        course_chooser.course_said(course)  # the round settings help box says it as the user did
                         note = run_course_in_background(course, on_done=self.notice.emit, then_now=then_now)
                     elif phrase in SYNC_PHRASES:
                         # Tells the app which screen GSPro is on. No clicks, no keys.
@@ -644,23 +686,22 @@ class VoiceListener(QObject):
                         label = phrase
                         set_map_size(phrase)
                         note = "Mini map set to " + ("large" if MAP_SIZE_PHRASES[phrase] else "small")
-                    elif phrase in ("gspro exit", "confirm exit"):
-                        # Closing GSPro takes two steps: gspro exit, then confirm exit.
+                    elif phrase == "application exit":
                         move = None
                         sent = False
                         release()
                         label = phrase
-                        if phrase == "gspro exit":
-                            note = request_exit(on_done=self.notice.emit)
-                        else:
-                            note = confirm_exit(on_done=self.notice.emit)
+                        self._help_open = False  # GSPro is closing, so the help goes off with it
+                        self.help_boxes.emit(False)
+                        note = request_exit(on_done=self.notice.emit)
                     elif phrase in SEQUENCES:
                         # GSPro menu sequences: clicks happen in GSPro's window, not as keys.
                         move = None
                         sent = False
                         release()
                         label = phrase
-                        note = run_gspro_sequence(phrase, on_done=self.notice.emit)
+                        self._pause_help()  # the boxes come down before the click, so they do not show on the new screen
+                        note = run_gspro_sequence(phrase, on_done=self._after_sequence)
                     elif phrase == DEBUG_PHRASE:
                         move = None
                         sent = False
@@ -669,7 +710,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase) or shadows.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase == "confirm exit" or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase == f"{TOGGLE} commands" or phrase in DIALOG_PHRASES or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith(COURSE_PHRASE) or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase == f"{TOGGLE} help" or phrase == "refresh help" or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)
@@ -929,25 +970,16 @@ def describe_heard(raw: str) -> str:
     return " ".join("(unknown)" if token == UNKNOWN_TOKEN else token for token in tokens)
 
 
-EXIT_PHRASES = ("confirm exit",)  # the second step; only heard when the Confirm Exit preference is on
-
-
 def _command_phrases() -> tuple[str, ...]:
-    """Every phrase the command recognizer can hear, with the optional confirm exit left out unless it is on."""
-    from app.prefs import get_pref
-
-    always, screen_grammars = recognizer_setup(tuple(spoken_phrases()))
-    if get_pref("confirm_exit", "False") != "True":
-        always = tuple(p for p in always if p not in EXIT_PHRASES)
-        screen_grammars = {key: tuple(p for p in phrases if p not in EXIT_PHRASES) for key, phrases in screen_grammars.items()}
-    return always, screen_grammars
+    """Every phrase the command recognizer can hear: the always-on ones and one list per screen."""
+    return recognizer_setup(tuple(spoken_phrases()))
 
 
 def _build_recognizer() -> WsapiRecognizer:
     """The command recognizer: always-listening phrases, the course names, and one grammar per screen. Each group is
     turned on and off as the screen changes (see the listener)."""
     always, screen_grammars = _command_phrases()
-    groups = {"courses": course_phrases(), DIALOG_GROUP: DIALOG_PHRASES, GRID_GROUP: GRID_PHRASES, **screen_grammars}
+    groups = {"courses": course_phrases(), GRID_GROUP: GRID_PHRASES, **screen_grammars}
     return WsapiRecognizer(WAKE_PHRASES + always, groups)
 
 

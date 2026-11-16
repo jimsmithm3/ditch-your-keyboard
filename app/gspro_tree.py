@@ -53,7 +53,7 @@ class Screen:
 
 PLAYERS = Action("Players")
 SETTINGS = Action("Settings")
-EXIT = Action("Exit", "gspro exit", ("gspro exit",))
+EXIT = Action("Exit", "application exit", ("application exit",))
 BACK = Action("Back", "back screen", ("back screen",))
 CONFIRM = Block("Confirm dialog", shot="confirm_dialog.png")
 PLAY_COURSE = Action(
@@ -63,11 +63,10 @@ PLAY_COURSE = Action(
     shot="on_course_filtered.png",
 )
 PLAY_NOW = Action("Play now", "now", ("now",), shot="round_settings.png")
-SHOW_FAVORITES = Action("Show favorites", "show favorites", ("show favorites",), shot="on_course_practice_favorites.png")
-SHOW_INSTALLED = Action("Show installed", "show installed", ("show installed",))
+SHOW_FAVORITES = Action("Show favorites", "filter favorites", ("filter favorites",), shot="on_course_practice_favorites.png")
+SHOW_INSTALLED = Action("Show installed", "filter installed", ("filter installed",))
 CLEAR_COURSE = Action("Clear course search", "clear filter", ("clear filter",))
-SHOW_MENU = Action("Show menu", "show menu", ("show menu",), shot="training_screen.png")
-CANCEL_MENU = Action("Cancel menu", "cancel menu", ("cancel menu",))
+SHOW_MENU = Action("Show game menu", "show game menu", ("show game menu",), shot="training_screen.png")
 EXPAND_MAP = Action("Map resize", f"{TOGGLE} map", (), shot="mini_map_expanded.png")  # keystroke S, not a click
 PLACE_MARKER = Action("Place marker", "place marker", ("place marker",))
 SHRINK_MAP = Action("Shrink map", "shrink map", ())  # keystroke S, not a click
@@ -102,13 +101,13 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen("challenges", "Challenges", "home", f"{NAV} challenges"),
     Screen("tournaments", "Tournaments", "home", f"{NAV} tournaments"),
-    Screen("online", "Online match", "home", "online match"),
+    Screen("online", "Online match", "home", f"{NAV} online match"),
     Screen(
         "range",
         "GSPro Range",
         "practice",
-        f"{NAV} range",
-        (f"{NAV} range", f"{NAV} range now"),
+        f"{NAV} gspro practice range",
+        (f"{NAV} gspro practice range", f"{NAV} gspro practice range now"),
         actions=(CHANGE_DISTANCE, END_ROUND),
         shot="gspro_practice_range_screen.png",
     ),
@@ -135,7 +134,7 @@ SCREENS: tuple[Screen, ...] = (
         "Additional Range",
         "additional",
         "play <range name>",
-        actions=(SHOW_MENU, CANCEL_MENU, END_ROUND),
+        actions=(SHOW_MENU, END_ROUND),
         shot="driving_range_screen.png",
     ),
     # Round settings is split by how it is reached: from On course practice (practice), or from
@@ -146,16 +145,16 @@ SCREENS: tuple[Screen, ...] = (
         "on_course",
         "play <name>",
         ("play course",),
-        actions=(PLAY_NOW, BACK, PLAYERS, SETTINGS),
+        actions=(BACK, PLAYERS, SETTINGS),
         shot="round_settings_screen.png",
     ),
     Screen(
         "course_practice",
         "Course Practice",
         "round_settings_practice",
-        "now",
+        "play <course>",
         ("now",),
-        actions=(EXPAND_MAP, SHRINK_MAP, PLACE_MARKER, SHOW_MENU, CANCEL_MENU, END_ROUND),
+        actions=(EXPAND_MAP, SHRINK_MAP, PLACE_MARKER, SHOW_MENU, END_ROUND),
         shot="training_screen.png",
     ),
     Screen(
@@ -164,16 +163,16 @@ SCREENS: tuple[Screen, ...] = (
         "local_match",
         "play <name>",
         ("play course",),
-        actions=(PLAY_NOW, BACK, PLAYERS, SETTINGS),
+        actions=(BACK, PLAYERS, SETTINGS),
         shot="round_settings_screen.png",
     ),
     Screen(
         "play",
         "Course play",
         "round_settings_play",
-        "now",
+        "play <course>",
         ("now",),
-        actions=(EXPAND_MAP, SHRINK_MAP, PLACE_MARKER, SHOW_MENU, CANCEL_MENU, END_ROUND),
+        actions=(EXPAND_MAP, SHRINK_MAP, PLACE_MARKER, SHOW_MENU, END_ROUND),
         shot="course_screen.png",
     ),
 )

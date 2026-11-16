@@ -251,7 +251,9 @@ _NUMBER_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight",
 _NUMBERED_FAMILIES: tuple[tuple[tuple[str, ...], str], ...] = (
     (tuple(f"play row {word} now" for word in _NUMBER_WORDS), "play row [1-9] now"),
     (tuple(f"play row {word}" for word in _NUMBER_WORDS), "play row [1-9]"),
+    (tuple(f"download row {word} now" for word in _NUMBER_WORDS), "download row [1-9] now"),
     (tuple(f"download row {word}" for word in _NUMBER_WORDS), "download row [1-9]"),
+    (tuple(f"show notes {word}" for word in _NUMBER_WORDS), "show notes [1-9]"),
     (tuple(f"toggle favorite row {word}" for word in _NUMBER_WORDS), "toggle favorite row [1-9]"),
     (tuple(f"shadow {word}" for word in ("one", "two", "three", "four", "five")), "shadow [1-5]"),
 )

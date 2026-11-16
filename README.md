@@ -2,6 +2,8 @@
 
 Hands-free voice commands for GSPro. This is the desktop skeleton only: a PySide6 window loaded from a Qt Designer `.ui` file, plus a windowed PyInstaller exe.
 
+> **Unofficial.** Ditch Your Keyboard is not made by, endorsed by, or affiliated with GSPro or its makers. GSPro is their product; this app only sends clicks and keys to it.
+
 Runtime Qt binding is `PySide6_Essentials` (widgets and `QUiLoader`). The full `PySide6` metapackage also pulls Qt WebEngine, which this app does not use.
 
 ## Setup
@@ -43,3 +45,7 @@ Windowed onefile (`console=False`). No code signing.
 ```
 
 Output: `dist\ditch-your-keyboard.exe`. The `.ui` file is bundled via `datas` in `ditch-your-keyboard.spec`.
+
+## License
+
+GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE). Anyone who distributes this app, changed or not, must also give its source under the same license.

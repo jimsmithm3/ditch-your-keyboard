@@ -155,16 +155,6 @@ PREFS: list[PrefSpec] = [
         "FLOAT",
     ),
     PrefSpec(
-        "Confirm Exit",
-        "confirm_exit",
-        "On: say \"gspro exit\", then \"confirm exit\" within 8 seconds, to close GSPro and the connectors. Off (default): \"gspro exit\" closes them at once. Takes effect after a restart",
-        "GSPRO",
-        "False",
-        "DROPDOWN",
-        "",
-        ("True", "False"),
-    ),
-    PrefSpec(
         "GSPro Overlay",
         "gspro_overlay",
         "On: the status line and last heard show over the bottom middle of the GSPro window. Off hides it. Takes effect right away",

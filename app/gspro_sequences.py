@@ -12,6 +12,7 @@ Clicks never move the pointer afterwards. Moving it right after a click cancelle
 """
 
 import atexit
+import ctypes
 import logging
 import threading
 import time
@@ -30,12 +31,18 @@ from app.gspro_ui import (
     ADDITIONAL_CARD,
     COURSE_LIST_WATCH,
     LOCAL_CARD,
+    CHALLENGES_CARD,
+    PARK_POINT,
+    TOURNAMENTS_CARD,
+    ONLINE_CARD,
     CANCEL_BUTTON,
     CONFIRM_BUTTON,
     END_ROUND_BUTTON,
     EXIT_BUTTON,
     FILTER_FAVORITES,
     FILTER_INSTALLED,
+    FILTER_ALL,
+    FILTER_TRENDING,
     FIRST_PLAY,
     GSPRO_TITLE,
     MENU_BUTTON,
@@ -48,7 +55,6 @@ from app.gspro_ui import (
     ROUND_TAB_HOLES,
     APPLY_BUTTON,
     DISTANCE_PENCIL,
-    DISTANCE_FIRST_DIGIT,
     RANDOMIZER_ICON,
     SHOTS_1,
     SHOTS_3,
@@ -97,13 +103,15 @@ _lock = threading.Lock()
 CLOSED = "closed"
 SCREEN_AFTER: dict[str, str] = {
     f"{NAV} practice": "practice",
-    f"{NAV} range now": "range",
+    f"{NAV} gspro practice range now": "range",
     f"{NAV} on course practice now": "on_course",
     f"{NAV} additional ranges now": "additional",
-    f"{NAV} range": "range",
-    f"{NAV} screen": "home",
+    f"{NAV} gspro practice range": "range",
+    f"{NAV} challenges": "challenges",
+    f"{NAV} tournaments": "tournaments",
+    f"{NAV} online match": "online",
     "confirm": "home",  # the end round dialog's CONFIRM goes back to the home screen
-    "gspro exit": CLOSED,
+    "application exit": CLOSED,
     f"{NAV} on course practice": "on_course",
     f"{NAV} additional ranges": "additional",
     f"{NAV} play": "local_match",
@@ -430,6 +438,7 @@ def marker_stop() -> str:
 SLIDER_PHRASES: dict[str, tuple[tuple[float, float], float] | None] = {
     "change max distance": (MAX_SLIDER_LEFT, SLIDER_RIGHT_X),  # "change max" is an alias
     "change min distance": (MIN_SLIDER_LEFT, SLIDER_RIGHT_X),  # "change min" is an alias
+    "change driving range distance": ((0.172, 0.071), 0.292),  # the range top bar slider: press its left end, move right until stop
     "change direction": (WIND_DIRECTION_LEFT, WIND_RIGHT_X),  # the wind panel, opened with "change wind"
     "change strength": (WIND_STRENGTH_LEFT, WIND_RIGHT_X),
     "slide left": None,  # None: press where the pointer is, not at a track
@@ -563,13 +572,30 @@ def close_wind() -> str:
     return failed or "close wind: done"
 
 
+# "slide left" / "slide right" move the drag from where the pointer is, so they only work while the pointer is still on
+# the ball of the slider just changed. Set by a change command that starts a drag; cleared by any other command.
+_slide_ready = False
+
+
+def clear_slide() -> None:
+    global _slide_ready
+    _slide_ready = False
+
+
 def slider_start(name: str) -> str:
-    global _slider_name, _slider_x, _slider_y, _slider_right, _slider_down, _slider_thread
+    global _slider_name, _slider_x, _slider_y, _slider_right, _slider_down, _slider_thread, _slide_ready
+    if name in ("change max distance", "change min distance") and not _randomizer_on:
+        return f"{name}: random is off, so the distance is typed; say random on first"
+    if name in ("slide left", "slide right") and not _slide_ready:
+        return f"{name}: only right after change max, change min or change driving range distance (the pointer must still be on the ball)"
     if name in WIND_SLIDERS:
         if _panel != WIND_PANEL:
             return f"{name}: say change wind first"
+    elif name == "change driving range distance":  # the top bar slider: no panel needed, only the range screen
+        if _screen != "range" or _panel is not None:
+            return f"{name}: say GSPro practice range first"
     elif _screen != "range" or _panel != PREFERENCES_PANEL:
-        return f"{name}: open preferences first"
+        return f"{name}: open prefs first"
     if motion_active():
         return f"{name}: already moving; say stop first"
     if _lock.locked():
@@ -607,6 +633,8 @@ def slider_start(name: str) -> str:
     _slider_thread = threading.Thread(target=_slider_loop, name="ditch-your-keyboard-slider", daemon=True)
     _slider_thread.start()
     log.info("%s: button held at the left end of the track", name)
+    if name not in ("slide left", "slide right"):
+        _slide_ready = True  # the pointer is on the ball now, so a slide can follow
     return f"{name}: dragging; say stop when it is where you want"
 
 
@@ -615,6 +643,8 @@ def _slider_panel_open() -> bool:
     preferences panel on the range for the others."""
     if _slider_name in WIND_SLIDERS:
         return _panel == WIND_PANEL
+    if _slider_name == "change driving range distance":  # the top bar slider: no panel, only the range screen
+        return _screen == "range" and _panel is None
     return _screen == "range" and _panel == PREFERENCES_PANEL
 
 
@@ -739,14 +769,13 @@ class Step:
 # Number box pattern: open the box (a click), clear it with Backspace, then type the digits by voice
 # and press Enter with "done". One Backspace is enough: the click highlights the old value, so the
 # first Backspace clears all of it. The clear is kept so the box shows empty and the next input is clear.
-NUMBER_BOX_CLEAR_PRESSES = 1
 
 
 SEQUENCES: dict[str, tuple[Step, ...]] = {
     f"{NAV} practice": (Step("PRACTICE", PRACTICE_CARD),),
-    f"{NAV} range": (Step("PRACTICE RANGE", RANGE_CARD),),
+    f"{NAV} gspro practice range": (Step("PRACTICE RANGE", RANGE_CARD),),
     # Home shortcuts: the practice screen is passed through, so these need no practice-screen grammar.
-    f"{NAV} range now": (
+    f"{NAV} gspro practice range now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("PRACTICE RANGE", RANGE_CARD),
     ),
@@ -759,51 +788,56 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
         Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),
     ),
     "back screen": (Step("BACK", BACK_BUTTON),),
-    # Clicks BACK until a click does nothing, which means home (or as close as it can get).
-    f"{NAV} screen": (Step("BACK", BACK_BUTTON, HOME_WATCH, repeat=8, wait=4.0),),
-    "gspro exit": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
+    "application exit": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
     f"{NAV} on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
     f"{NAV} additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
     f"{NAV} play": (Step("LOCAL MATCH", LOCAL_CARD, WATCH_SCREEN),),
+    # The other home buttons. The screen is left to the game; the watch shows the list opening.
+    f"{NAV} challenges": (Step("CHALLENGES", CHALLENGES_CARD, WATCH_SCREEN),),
+    f"{NAV} tournaments": (Step("TOURNAMENTS", TOURNAMENTS_CARD, WATCH_SCREEN),),
+    f"{NAV} online match": (Step("ONLINE MATCH", ONLINE_CARD, WATCH_SCREEN),),
     # Plays the course that is set up on round settings. "play course" with no name does the same.
     "now": (Step("PLAY", ROUND_PLAY),),
     "players tab": (Step("PLAYERS TAB", ROUND_TAB_PLAYERS),),
     "match tab": (Step("MATCH TAB", ROUND_TAB_MATCH),),
     "holes tab": (Step("HOLES TAB", ROUND_TAB_HOLES),),
     # Practice range panel. "done" presses Enter in the distance box first (see _run), then Apply.
-    "open preferences": (Step("PREFERENCES", PREFERENCES_CHEVRON),),
-    "change driving range distance": (
-        # number box pattern: click the first character (highlights the value), then one Backspace clears it
-        Step("DISTANCE", DISTANCE_FIRST_DIGIT),
-        Step("CLEAR BOX", DISTANCE_FIRST_DIGIT, key="backspace", click=False, presses=NUMBER_BOX_CLEAR_PRESSES),
-    ),
+    "open prefs": (Step("PREFERENCES", PREFERENCES_CHEVRON),),
+    # The pencil highlights the value, so the digits said next replace it. "done" then completes the change.
+    "type driving range distance": (Step("DISTANCE", DISTANCE_PENCIL),),
     "done": (),  # presses Enter in the distance box (see _run); Apply is its own command
     "apply": (Step("APPLY", APPLY_BUTTON),),
-    "close preferences": (Step("PREFERENCES", PANEL_CLOSE_CHEVRON),),  # the up arrow on the open panel
-    "randomizer on": (Step("RANDOMIZER", RANDOMIZER_ICON),),  # a click toggles it; the app cannot read the state
-    "randomizer off": (Step("RANDOMIZER", RANDOMIZER_ICON),),
+    "close prefs": (Step("PREFERENCES", PANEL_CLOSE_CHEVRON),),  # the up arrow on the open panel
+    "random on": (Step("RANDOMIZER", RANDOMIZER_ICON),),  # a click toggles it; the app cannot read the state
+    "random off": (Step("RANDOMIZER", RANDOMIZER_ICON),),
     "change shots per one": (Step("SHOTS 1", SHOTS_1),),
     "change shots per three": (Step("SHOTS 3", SHOTS_3),),
     "change shots per five": (Step("SHOTS 5", SHOTS_5),),
     "change shots per ten": (Step("SHOTS 10", SHOTS_10),),
     "change shots per fifteen": (Step("SHOTS 15", SHOTS_15),),
     "clear filter": (Step("CLEAR SEARCH", CLEAR_SEARCH_CLICK, key="backspace"),),
-    "show favorites": (Step("FAVORITES", FILTER_FAVORITES),),
-    "show installed": (Step("INSTALLED", FILTER_INSTALLED),),
-    "show menu": (Step("GAME MENU", MENU_BUTTON),),
-    "cancel menu": (Step("CANCEL MENU", MENU_CLOSE),),
+    "filter favorites": (Step("FAVORITES", FILTER_FAVORITES),),
+    "filter installed": (Step("INSTALLED", FILTER_INSTALLED),),
+    "filter all": (Step("ALL", FILTER_ALL),),
+    "filter trending": (Step("TRENDING", FILTER_TRENDING),),
+    "show game menu": (Step("GAME MENU", MENU_BUTTON),),
     # End round is two steps: this one opens the confirm dialog, and "confirm" (below) answers it.
     "end round": (
         Step("GAME MENU", MENU_BUTTON, WATCH_MENU),
         Step("END ROUND", END_ROUND_BUTTON, WATCH_DIALOG),
     ),
     "confirm": (Step("CONFIRM", CONFIRM_BUTTON, WATCH_DIALOG),),  # on the end round dialog only
-    # On the end round dialog: closes the dialog, then the game menu through its upper-right X.
-    "cancel": (
-        Step("CANCEL", CANCEL_BUTTON, WATCH_DIALOG),
-        Step("CLOSE MENU", MENU_CLOSE, WATCH_MENU),
-    ),
+    # "cancel" is one phrase with two buttons. _run picks one by the open panel (see _cancel_key), so only one is clicked.
+    "cancel": (Step("CANCEL", CANCEL_BUTTON, WATCH_DIALOG),),  # the phrase is listened for; the steps come from the key
+    # the end round dialog's cancel, then the game menu's X, so the menu closes with it
+    "cancel dialog": (Step("CANCEL", CANCEL_BUTTON, WATCH_DIALOG), Step("CLOSE MENU", MENU_CLOSE, WATCH_MENU)),
+    "cancel menu": (Step("CLOSE MENU", MENU_CLOSE, WATCH_MENU),),  # the game menu's X
 }
+
+
+def _cancel_key() -> str:
+    """The sequence "cancel" runs: the end round dialog's cancel when that dialog is up, else the game menu's X."""
+    return "cancel dialog" if current_panel() == "end_round_confirm" else "cancel menu"
 
 
 def _watch_grid(rect: tuple[int, int, int, int], box) -> list[float]:
@@ -848,18 +882,21 @@ COURSE_LIST_SCREENS = ("on_course", "additional", "local_match")
 ROUND_SETTINGS_SCREENS = ("round_settings_practice", "round_settings_play")
 # Sequences that do things on the screen you are already on. The screen memory does not change.
 SAME_SCREEN_SEQUENCES = (
-    "show favorites",
-    "show installed",
+    "filter favorites",
+    "filter installed",
+    "filter all",
+    "filter trending",
     "clear filter",
-    "show menu",
-    "cancel menu",
-    "open preferences",
-    "change driving range distance",
+    "show game menu",
+    "end round",  # opens the dialog on the same screen; "confirm" is what leaves it (SCREEN_AFTER)
+    "cancel",
+    "open prefs",
+    "type driving range distance",
     "done",
     "apply",
-    "close preferences",
-    "randomizer on",
-    "randomizer off",
+    "close prefs",
+    "random on",
+    "random off",
     "change shots per one",
     "change shots per three",
     "change shots per five",
@@ -867,8 +904,10 @@ SAME_SCREEN_SEQUENCES = (
     "change shots per fifteen",
 )
 # Panels: the sequence that opens each panel, and the sequences that close the panel that is open.
-PANEL_OPENERS: dict[str, str] = {"open preferences": "driving_preferences_panel", "end round": "end_round_confirm"}
-PANEL_CLOSERS: tuple[str, ...] = ("apply", "close preferences", "confirm", "cancel")
+GAME_MENU_PANEL = "game_menu_panel"  # the game menu: its grammar replaces the screen's while it is up
+MENU_SCREENS = ("range", "course_practice", "play")  # the screens the game menu opens on
+PANEL_OPENERS: dict[str, str] = {"open prefs": "driving_preferences_panel", "end round": "end_round_confirm", "show game menu": GAME_MENU_PANEL}
+PANEL_CLOSERS: tuple[str, ...] = ("apply", "close prefs", "confirm", "cancel")
 _panel: str | None = None  # the panel open right now; its grammar is the one listened for
 
 
@@ -880,17 +919,61 @@ def current_panel() -> str | None:
         _panel = None  # the marker panel belongs to the course screens
     if _panel == HOLE_PANEL and _screen not in HOLE_SCREENS:
         _panel = None  # the hole panel belongs to course practice
+    if _panel == GAME_MENU_PANEL and _screen not in MENU_SCREENS:
+        _panel = None  # the game menu closes when the app is elsewhere
     return _panel
 
 
-START_WAITING_NOTE = f"{NAV} screen: waiting for confirm (say confirm)"  # click screen from the range or a course
+_randomizer_on = False  # read from the screen when the panel opens and after each random command (see _read_random)
+# A grid of points inside the Max Distance value box on the open prefs panel, as fractions of the window. The box is
+# black when random is on and panel background when it is off, so one dark point in the grid means random is on.
+RANDOM_BOX_POINTS = tuple((x, y) for x in (0.225, 0.245, 0.265) for y in (0.385, 0.395, 0.405))
+RANDOM_DARK_SUM = 90  # a point this dark (sum of the three channels) is the black box; the panel background is lighter
+PANEL_LOAD_SECONDS = 1.0  # the panel takes a moment to draw before it is read
+
+
+def randomizer_on() -> bool:
+    return _randomizer_on
+
+
+def _read_random() -> None:
+    """Looks at the Max Distance box on the open panel and sets the randomizer state from its colour."""
+    global _randomizer_on
+    time.sleep(PANEL_LOAD_SECONDS)  # the panel takes a moment to draw
+    from app.course_chooser import _row_colour
+
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None or current_panel() != PREFERENCES_PANEL:
+        return
+    rect = client_rect(hwnd)
+    darkest = min(sum(_row_colour(*_point(rect, point))) for point in RANDOM_BOX_POINTS)
+    _randomizer_on = darkest < RANDOM_DARK_SUM
+    log.info("randomizer read from the screen: darkest sum %d -> %s", darkest, "on" if _randomizer_on else "off")
+
+
+def refresh_random() -> None:
+    """Called on each help refresh: while the prefs panel is up, the switch is read again, so a change made in GSPro
+    itself (not by voice) is followed. Reads pixels only, so it is quick."""
+    global _randomizer_on
+    if current_panel() != PREFERENCES_PANEL:
+        return
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return
+    from app.course_chooser import _row_colour
+
+    rect = client_rect(hwnd)
+    darkest = min(sum(_row_colour(*_point(rect, point))) for point in RANDOM_BOX_POINTS)
+    _randomizer_on = darkest < RANDOM_DARK_SUM
+
+
+def _remember_random(name: str, note: str) -> None:
+    if name in ("open prefs", "random on", "random off") and note.endswith(": done"):
+        threading.Thread(target=_read_random, daemon=True, name="ditch-your-keyboard-random-read").start()
 
 
 def _remember_panel(name: str, note: str) -> None:
     global _panel
-    if name == f"{NAV} screen" and note == START_WAITING_NOTE:
-        _panel = PANEL_OPENERS["end round"]  # the end round dialog is open, so its panel listens
-        return
     if not note.endswith(": done"):
         return
     if name in PANEL_OPENERS:
@@ -1031,7 +1114,7 @@ def _search_words(spoken_text: str) -> str:
 def _play_course(text: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return f"GSPro is not running. Say start gspro."
+        return f"GSPro is not running. Say start application."
     if _screen in ROUND_SETTINGS_SCREENS:
         # The course is already set up here, so the name is not needed: press PLAY.
         hwnd = find_window(GSPRO_TITLE)
@@ -1130,9 +1213,10 @@ def run_sequence(name: str) -> str:
         note = _run(name)
         _remember_screen(name, note)
         _remember_panel(name, note)
+        _remember_random(name, note)
         if note.endswith(": done") or "at home" in note:
             set_bool(f"tree.done:{name}", True)  # ran successfully: shows as done on Overview
-        if name == "gspro exit" and (note.endswith(": done") or note.startswith("GSPro is not running")):
+        if name == "application exit" and (note.endswith(": done") or note.startswith("GSPro is not running")):
             from app.launch import stop_connector
 
             log.info("exit golf: %s", stop_connector())  # the connector goes with GSPro
@@ -1142,31 +1226,11 @@ def run_sequence(name: str) -> str:
         _lock.release()
 
 
-EXIT_CONFIRM_SECONDS = 8.0  # "confirm exit" must come this soon after "gspro exit"
-_exit_armed_until = 0.0
-
-
 def request_exit(on_done: Callable[[str], None] | None = None) -> str:
-    """Closes GSpro and the connectors. With the Confirm Exit preference on, this is only the first
-    step: nothing closes until confirm_exit is said in time. With it off, it closes at once."""
-    global _exit_armed_until
+    """Closes GSpro and the connectors. Only from the home screen, which the grammar enforces."""
     if _screen != "home":
-        return f"gspro exit: only from the home screen; say {NAV} screen first"
-    if get_pref("confirm_exit", "False") != "True":
-        _exit_armed_until = 0.0
-        return run_in_background("gspro exit", on_done)
-    _exit_armed_until = time.monotonic() + EXIT_CONFIRM_SECONDS
-    return f"Say confirm exit within {EXIT_CONFIRM_SECONDS:.0f} seconds to close GSpro"
-
-
-def confirm_exit(on_done: Callable[[str], None] | None = None) -> str:
-    """Second step: closes GSpro, but only if gspro exit was said just before."""
-    global _exit_armed_until
-    armed = time.monotonic() <= _exit_armed_until
-    _exit_armed_until = 0.0
-    if not armed:
-        return "Not armed: say gspro exit first"
-    return run_in_background("gspro exit", on_done)
+        return "application exit: only from the home screen; say sync to home screen if GSPro is already there"
+    return run_in_background("application exit", on_done)
 
 
 def sync_screen(key: str) -> str:
@@ -1189,9 +1253,7 @@ def _remember_screen(name: str, note: str) -> None:
     global _screen, _marker_mode
     if note.startswith(("Already running", "GSPro window not found", "GSPro is not running")):
         return  # nothing was clicked, so the screen is unchanged
-    if name == f"{NAV} screen" and "at home" in note:
-        _screen = "home"
-    elif name == "back screen" and note.endswith(": done") and _screen:
+    if name == "back screen" and note.endswith(": done") and _screen:
         # BACK goes to the screen this one is reached from, as the tree says.
         from app.gspro_tree import screen
 
@@ -1209,39 +1271,48 @@ def _remember_screen(name: str, note: str) -> None:
         _release_marker()  # never leave the mouse button held once the play screen is gone
 
 
+# Sequences that leave the mouse where it is. None yet; add a sequence name here to keep its cursor in place.
+PARK_EXEMPT: frozenset[str] = frozenset()
+PARK_DELAY_SECONDS = 0.1
+
+
+def _park_cursor(hwnd: int) -> None:
+    """Moves the mouse to the lower right of GSPro after a sequence, so it does not sit over a tile or the course view.
+    Not while the marker holds the button or a slider is being dragged: moving then would drag it."""
+    if _marker_mode or slider_active():
+        return
+    time.sleep(PARK_DELAY_SECONDS)  # GSPro must register the last click before the mouse moves
+    x, y = _point(client_rect(hwnd), PARK_POINT)
+    ctypes.windll.user32.SetCursorPos(x, y)
+
+
 def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return f"GSPro is not running. Say start gspro."
-    if name in ("show favorites", "show installed", "clear filter") and _screen not in COURSE_LIST_SCREENS:
+        return f"GSPro is not running. Say start application."
+    if name in ("filter favorites", "filter installed", "filter all", "filter trending", "clear filter") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:
         return "now: say play course and the course name first"
     if name.endswith(" tab") and _screen not in ROUND_SETTINGS_SCREENS:
         return f"{name}: say round settings first"
-    if name in ("open preferences", "change driving range distance", "done") and _screen != "range":
+    if name == "type driving range distance" and _randomizer_on:
+        return f"{name}: random is on, so the distance is set by the min and max sliders; say random off first"
+    if name in ("open prefs", "type driving range distance", "done") and _screen != "range":
         return f"{name}: say GSPro practice range first"
-    if (name in ("apply", "done", "randomizer on", "randomizer off") or name.startswith("change shots per")) and _panel is None:
-        return f"{name}: open preferences first"
-    if name in ("apply", "close preferences", "done", "randomizer on", "randomizer off") and slider_active():
+    if (name in ("apply", "done", "random on", "random off") or name.startswith("change shots per")) and _panel is None:
+        return f"{name}: open prefs first"
+    if name in ("apply", "close prefs", "done", "random on", "random off") and slider_active():
         return f"{name}: say stop first; a slider is being dragged"
-    if name == "gspro exit" and _screen != "home":
-        # EXIT is only on the home screen, so get there first with the same routine as "home screen".
-        home = _run(f"{NAV} screen")
-        if home == START_WAITING_NOTE:  # from the range or a course, the end round dialog must be answered first
-            return f"{name}: say confirm to end the round first, then say {name} again"
-        if not (home.endswith(": done") or "at home" in home or "nothing to go back" in home):
-            return f"{name}: could not get to the home screen first ({home})"
-        _screen = "home"
-    # Home is not skipped even when the memory says home: a screen we did not track may
-    # have a BACK button, and on a real home screen the first BACK click does nothing.
-    if name == f"{NAV} screen" and _screen in ("range", "play", "course_practice", "driving_range"):
-        # From the range or a course, going home is ending the round: the menu and END ROUND, then confirm.
-        ended = _run("end round")
-        if not ended.endswith(": done"):
-            return ended
-        return START_WAITING_NOTE  # the end round dialog is open; the panel waits for confirm
-    steps = SEQUENCES[name]
+    if name == "application exit" and _screen != "home":
+        return f"{name}: only from the home screen; say sync to home screen if GSPro is already there"
+    if name == "clear filter":
+        from app.course_chooser import filter_has_text
+
+        time.sleep(0.15)  # the help boxes come down first (the listener does that before a sequence)
+        if not filter_has_text():
+            return "clear filter: the box is already empty"
+    steps = SEQUENCES[_cancel_key() if name == "cancel" else name]
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return "GSPro window not found"
@@ -1293,4 +1364,6 @@ def _run(name: str) -> str:
         time.sleep(_settle_floor(short=True))  # the course list is quick, so the filter clear can run sooner
         _clear_course_filter(hwnd)
     log.info("%s: done in %.1f s", name, time.monotonic() - started)
+    if name not in PARK_EXEMPT:
+        _park_cursor(hwnd)
     return f"{name}: done"

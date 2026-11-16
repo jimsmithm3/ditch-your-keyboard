@@ -37,6 +37,8 @@ CLOSE_BRACKET = (")", "0", True)
 
 _active = False
 _typed = ""
+_punctuation = False  # the legend shows the punctuation words instead of the NATO letters
+PUNCTUATION_WORDS: tuple[str, ...] = ("space", "underscore", "dash", "comma", "period", "parenthesis", "number sign", "plus sign")
 
 
 def accepts(phrase: str) -> bool:
@@ -48,15 +50,25 @@ def active() -> bool:
     return _active
 
 
+def punctuation() -> bool:
+    return _punctuation
+
+
+def set_punctuation(on: bool) -> None:
+    global _punctuation
+    _punctuation = on
+
+
 def typed() -> str:
     return _typed
 
 
 def start() -> None:
     """Turn typing on with nothing typed yet."""
-    global _active, _typed
+    global _active, _typed, _punctuation
     _active = True
     _typed = ""
+    _punctuation = False
 
 
 def stop() -> None:

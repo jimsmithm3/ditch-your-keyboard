@@ -85,7 +85,7 @@ class MainWindow:
         self.listener.heard.connect(self._on_heard)
         self.listener.command.connect(self._on_command)
         self.listener.notice.connect(self._on_notice)
-        self.listener.available.connect(self._on_available)
+        self.listener.help_boxes.connect(self._on_help_boxes)
         self.listener.grid.connect(self._on_grid)
         self.listener.legend.connect(self._on_legend)
         self.listener.grammars.connect(self._on_grammars)
@@ -221,10 +221,10 @@ class MainWindow:
 
         apply(state)
 
-    def _on_available(self, action: str) -> None:
-        from app.available_dialog import show_available
+    def _on_help_boxes(self, shown: bool) -> None:
+        from app.gspro_boxes import apply
 
-        show_available(action)
+        apply(shown)
 
     def _on_notice(self, text: str) -> None:
         if text:

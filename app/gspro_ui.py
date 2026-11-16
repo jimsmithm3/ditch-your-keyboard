@@ -12,11 +12,13 @@ screen GSPro is on.
 GSPRO_TITLE = "GSPro"
 
 # Home screen
-PRACTICE_CARD = (0.317, 0.722)  # PRACTICE
+PRACTICE_CARD = (0.318, 0.722)  # PRACTICE
 MENU_BUTTON = (0.975, 0.039)  # game menu, upper right (hamburger)
+# Where the mouse rests after a sequence: the lower right corner of GSPro, just outside the mini map and the buttons.
+PARK_POINT = (0.997, 0.997)
 
 # Practice screen
-RANGE_CARD = (0.318, 0.712)  # GSPRO PRACTICE RANGE
+RANGE_CARD = (0.318, 0.722)  # GSPRO PRACTICE RANGE
 
 # Any screen with a BACK button (upper left). Nested screens have one BACK each, so say
 # "go back" again to go up another level.
@@ -27,9 +29,13 @@ EXIT_BUTTON = (0.06, 0.042)  # EXIT, upper left of the home screen
 HOME_WATCH = (0.0, 0.17, 1.0, 0.95)
 
 # On course practice: the course list. The search box starts with the cursor in it.
-ON_COURSE_CARD = (0.5, 0.72)  # ON COURSE PRACTICE on the practice screen
+ON_COURSE_CARD = (0.5, 0.722)  # ON COURSE PRACTICE on the practice screen
 ADDITIONAL_CARD = (0.682, 0.722)  # ADDITIONAL RANGES on the practice screen
 LOCAL_CARD = (0.135, 0.722)  # PLAY on the home screen, which opens LOCAL MATCH (the course list)
+# The other home buttons, same row and height as PLAY and PRACTICE (from the home screen screenshot).
+CHALLENGES_CARD = (0.5, 0.722)  # CHALLENGES on the home screen
+TOURNAMENTS_CARD = (0.682, 0.722)  # TOURNAMENTS on the home screen
+ONLINE_CARD = (0.865, 0.722)  # ONLINE MATCH on the home screen
 
 # Mini map on the course screen. Its center is where a marker is dropped.
 MAP_SMALL_CENTER = (0.921, 0.758)  # the small map, lower right
@@ -39,10 +45,12 @@ MAP_EXPANDED_CENTER = (0.855, 0.544)  # the map when expanded with S
 MAP_SMALL_BOUNDS = (0.855, 0.525, 0.988, 0.992)
 MAP_EXPANDED_BOUNDS = (0.723, 0.093, 0.988, 0.992)
 SEARCH_BOX = (0.35, 0.123)  # "What course do you want to play?"
-CLEAR_SEARCH_CLICK = (0.052, 0.125)  # first letter of the search text; a click here selects all of it
+CLEAR_SEARCH_CLICK = (0.045, 0.125)  # just left of the first letter of the search text (between the icon and the text); a click here selects all of it
 FIRST_PLAY = (0.612, 0.208)  # PLAY on the first row of the list
 FILTER_INSTALLED = (0.731, 0.266)  # the Installed filter button (the whole list)
 FILTER_FAVORITES = (0.934, 0.266)  # the Favorites filter button
+FILTER_ALL = (0.794, 0.266)  # the All filter button, between Installed and Trending
+FILTER_TRENDING = (0.859, 0.266)  # the Trending filter button
 COURSE_LIST_WATCH = (0.0, 0.17, 0.66, 0.95)  # the course rows; change when the search results change
 
 # Course play (after PLAY on round settings). MENU_BUTTON opens the game menu; MENU_CLOSE is its X.

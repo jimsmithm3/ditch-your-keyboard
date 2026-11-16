@@ -1,4 +1,4 @@
-"""Finish SQG-GSPRO-Connect's setup for "start gspro": Scan, Connect the LM, Connect GSPro.
+"""Finish SQG-GSPRO-Connect's setup for "start application": Scan, Connect the LM, Connect GSPro.
 
 The connector exposes no accessibility tree and no native child controls, so this
 clicks at positions inside its window. Each position is a fraction of the window

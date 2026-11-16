@@ -5,20 +5,26 @@ and it takes no focus. Look and feel are not final.
 
 import ctypes
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from app.connector_ui import client_rect, find_window
+from app import text_entry
 from app.gspro_screens import GRID_WORDS
 from app.gspro_ui import GSPRO_TITLE
 
 # The open column, as fractions of the GSPro window's width and height.
 LEFT, RIGHT = 0.525, 0.575  # the column the list was first drawn in, centred on the note icon
 SHIFT_LEFT_PX = -10  # the list starts this far left of that column; negative moves it right (40 px right of the old 30 px left)
-TOP, BOTTOM = 0.19, 0.99
+TOP, BOTTOM = 0.10, 0.99  # TOP is the filter box, so the first line ("Filter: ...") sits in it
 
 _widget: QWidget | None = None
+
+
+def _character(word: str) -> str:
+    """The character a punctuation word types, for the list. Parenthesis types both brackets."""
+    return text_entry.CHARACTERS[word][0] if word in text_entry.CHARACTERS else "( )"
 
 
 class _Legend(QWidget):
@@ -38,16 +44,32 @@ class _Legend(QWidget):
         width, height = self.width(), self.height()
         x0, x1 = LEFT * width - SHIFT_LEFT_PX, RIGHT * width - SHIFT_LEFT_PX
         y0, y1 = TOP * height, BOTTOM * height
-        painter.fillRect(int(x0), int(y0), int(x1 - x0), int(y1 - y0), QColor(20, 24, 32, 150))
         font = QFont()
         font.setPointSize(18)  # twice the earlier 9
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(QColor(242, 242, 242, 230))
-        lines = [f"Filter: {self.typed}"] + [f"{chr(ord('A') + i)}  {word}" for i, word in enumerate(GRID_WORDS)]
-        step = (y1 - y0) / len(lines)
+        if text_entry.punctuation():
+            top, rows = "show letters", [f"{_character(word)}  {word}" for word in text_entry.PUNCTUATION_WORDS]
+        else:
+            top, rows = "show punctuation", [f"{chr(ord('A') + i)}  {word}" for i, word in enumerate(GRID_WORDS)]
+        lines = [top] + rows  # the typed letters are in the search box
+        metrics = painter.fontMetrics()
+        # A fixed row height, so the list uses only the space its lines need; it only shrinks to fit the window.
+        step = min(metrics.height() + 8, (y1 - y0) / len(lines))
+        painter.fillRect(int(x0), int(y0), int(x1 - x0), int(step * len(lines) + 8), QColor(20, 24, 32, 150))
+        painter.setPen(QPen(QColor(230, 30, 30), 4))  # the red box round the letters, as in help mode
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(int(x0), int(y0), int(x1 - x0), int(step * len(lines) + 8))
+        painter.setPen(QColor(242, 242, 242, 230))
         for i, line in enumerate(lines):
-            painter.drawText(int(x0 + 6), int(y0 + step * (i + 1) - step * 0.3), line)
+            baseline = int(y0 + step * (i + 1) - step * 0.3)
+            if i == 0:  # the switch is a help label: red background, white text, like the boxes
+                painter.fillRect(QRect(int(x0), baseline - metrics.ascent() - 3, metrics.horizontalAdvance(line) + 12, metrics.height() + 6), QColor(160, 20, 20, 147))
+                painter.setPen(QColor(255, 255, 255))
+            else:
+                painter.setPen(QColor(242, 242, 242, 230))
+            painter.drawText(int(x0 + 6), baseline, line)
         painter.end()
 
 
