@@ -271,7 +271,7 @@ ROWS: tuple[Command, ...] = (
     Command(("shadow three",), "", "Shadow level 3", area="Visual / System", heard=False),
     Command(("shadow four",), "", "Shadow level 4", area="Visual / System", heard=False),
     Command(("shadow five",), "", "Shadow level 5 (deepest)", area="Visual / System", heard=False),
-    Command(("fullscreen",), "f11", "Toggle GSPro fullscreen (F11)", area="Visual / System"),
+    Command((f"{TOGGLE} fullscreen",), "f11", "Toggle GSPro fullscreen (F11)", area="Visual / System"),
     Command(("fast forward", "faster"), "space", "Fast forward", area="Visual / System"),
     Command(("sound off",), "minus", "Sound off", area="Visual / System", wired=False),
     Command(("sound on",), "add", "Sound on", area="Visual / System", wired=False),

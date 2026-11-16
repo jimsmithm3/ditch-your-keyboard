@@ -228,7 +228,7 @@ GLOBAL: tuple[str, ...] = (
     f"{NAV} gspro",
     f"{NAV} screen",
     f"{TOGGLE} commands",
-    "fullscreen",
+    f"{TOGGLE} fullscreen",
 )
 
 SCREEN_RECORDS: tuple[Screen, ...] = (
