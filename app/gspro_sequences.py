@@ -1025,7 +1025,7 @@ def _search_words(spoken_text: str) -> str:
 def _play_course(text: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return f"GSPro is not running. Say {NAV} gspro."
+        return f"GSPro is not running. Say start gspro."
     if _screen in ROUND_SETTINGS_SCREENS:
         # The course is already set up here, so the name is not needed: press PLAY.
         hwnd = find_window(GSPRO_TITLE)
@@ -1206,7 +1206,7 @@ def _remember_screen(name: str, note: str) -> None:
 def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
-        return f"GSPro is not running. Say {NAV} gspro."
+        return f"GSPro is not running. Say start gspro."
     if name in ("show favorites", "show installed", "clear filter") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:

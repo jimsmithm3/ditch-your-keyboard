@@ -613,7 +613,7 @@ class VoiceListener(QObject):
                         move = None
                         sent = False  # no keys are sent; the note says what happened
                         release()
-                        label = f"{NAV} gspro"
+                        label = f"start gspro"
                         note = start_play_golf(on_done=self.notice.emit)
                     elif phrase == "play course":
                         # On round settings, the course is already set up: press its PLAY. No name is needed.

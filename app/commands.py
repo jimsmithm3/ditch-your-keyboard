@@ -7,7 +7,7 @@ from app.gspro_tree import SYNC_PHRASES
 from app.grammar_words import NAV, TOGGLE
 
 WAKE_PHRASES = ("hey caddie", "hey caddy")
-LAUNCH_PHRASE = f"{NAV} gspro"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
+LAUNCH_PHRASE = f"start gspro"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
 DEBUG_PHRASE = "debug press"  # one test press per command, for click debugging; handled in listener.py
 COURSE_PHRASE = "play"  # "play <name>" types the name in GSPro's course search; handled in listener.py
 ARM_SECONDS = 5.0
@@ -54,7 +54,7 @@ ROWS: tuple[Command, ...] = (
     Command(("tee left",), "c", "Tee left", area="Aim", repeat=True),
     Command(("tee right",), "v", "Tee right", area="Aim", repeat=True),
     Command(("stop",), "", "Stop aim, zoom, tee, fly over, a moving marker, or a slider being dragged", area="Aim"),
-    Command((f"{NAV} gspro",), "", "Start GSPro if it is not running", area="Launch"),
+    Command((f"start gspro",), "", "Start GSPro if it is not running", area="Launch"),
     Command((f"{NAV} practice",), "", "From the GSPro home screen, open the practice screen", area="Launch"),
     Command(
         (f"{NAV} range", "gspro practice range screen", "gspro range"),

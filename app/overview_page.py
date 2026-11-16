@@ -159,7 +159,7 @@ class OverviewPage(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
         if current_screen() == CLOSED:
-            self._screen_title.setText(f"GSPro is not running. Say {NAV} gspro.")
+            self._screen_title.setText(f"GSPro is not running. Say start gspro.")
             self._screen_title.setStyleSheet("font-size: 26px; font-weight: bold;")
             return
         current = tree.screen(current_screen())

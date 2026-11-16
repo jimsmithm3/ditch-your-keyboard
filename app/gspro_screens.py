@@ -168,7 +168,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
 GRID_GROUP = "grid"
 # The grid's cells are spoken with the NATO alphabet: distinct words that are less often misheard than
 # digits. Each cell is labelled with the first letter of its word, A to J. "golf" is a risk: it is close
-# to "click gspro", which always listens. The first word is cell 0 on the grid, and so on.
+# to "start gspro", which always listens. The first word is cell 0 on the grid, and so on.
 GRID_WORDS: tuple[str, ...] = (
     "alpha",
     "bravo",
@@ -225,7 +225,7 @@ DIALOG_PHRASES: tuple[str, ...] = ("show current grammar", "show always on")
 GLOBAL: tuple[str, ...] = (
     f"{TOGGLE} listening",
     f"{TOGGLE} keyboard",
-    f"{NAV} gspro",
+    f"start gspro",
     f"{NAV} screen",
     f"{TOGGLE} commands",
     f"{TOGGLE} fullscreen",
