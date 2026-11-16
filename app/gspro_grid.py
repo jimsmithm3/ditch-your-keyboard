@@ -298,22 +298,34 @@ _restore_small = False  # True while the map is large only for ball placement; i
 
 
 def _live_map_state(hwnd: int) -> str:
-    """The mini map's size as the screen shows it right now (see app/map_state.py)."""
+    """The mini map's size as the screen shows it right now (see app/map_state.py). The game window is copied into
+    memory once, and the pixels are read from that copy. Reading each pixel from the screen took seconds."""
     from app.map_state import read_map_state
 
-    rect = client_rect(hwnd)
+    left, top, right, bottom = client_rect(hwnd)
+    width, height = right - left, bottom - top
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
-    dc = user32.GetDC(0)
+    srccopy = 0x00CC0020
+    screen = user32.GetDC(0)
+    memory = gdi32.CreateCompatibleDC(screen)
+    bitmap = gdi32.CreateCompatibleBitmap(screen, width, height)
+    previous = gdi32.SelectObject(memory, bitmap)
     try:
+        gdi32.BitBlt(memory, 0, 0, width, height, screen, left, top, srccopy)
+
         def probe(fx: float, fy: float) -> tuple[int, int, int]:
-            x, y = _point(rect, (fx, fy))
-            color = gdi32.GetPixel(dc, x, y)
+            x = min(max(int(fx * width), 0), width - 1)
+            y = min(max(int(fy * height), 0), height - 1)
+            color = gdi32.GetPixel(memory, x, y)
             return (color & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF)
 
         return read_map_state(probe)
     finally:
-        user32.ReleaseDC(0, dc)
+        gdi32.SelectObject(memory, previous)
+        gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(memory)
+        user32.ReleaseDC(0, screen)
 
 
 def _map_to_large(hwnd: int) -> bool:
