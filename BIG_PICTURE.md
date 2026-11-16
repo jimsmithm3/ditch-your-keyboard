@@ -22,9 +22,9 @@ Golf sim at home. GSPro is projected onto a wall, so the player is standing and 
 ## Decisions
 
 - First pass: practice in a quiet room, just the player and the golf balls. Voice is the target, so the first pass is about making the key commands and voice matching work well in that setting.
-- Party mode (louder rooms, more people) is a later option. It may need a stronger recognizer. Vosk, Windows speech, or VoiceAttack all stay open until then.
+- Party mode (louder rooms, more people) is a later option. It may need a stronger recognizer. Windows speech or VoiceAttack stay open until then.
 - Windows-only is fine, since GSPro is Windows-only.
-- Recognizer: when the rewrite happens, switch from Vosk to the Windows speech API (the DLL route), and start with bare commands only (no start phrase). The start phrase is a later addition, and it's a small if/else on top of the same grammar, so it can be added then without a redesign.
+- Recognizer: Windows speech API only (Vosk is removed), and start with bare commands only (no start phrase). The start phrase is a later addition, and it's a small if/else on top of the same grammar, so it can be added then without a redesign.
 - Before the switch is final, the check that matters is whether bare commands fire reliably in the practice room with the Windows recognizer.
 - The demo that inspired this appears to have used a live mic with a limited set of words, not full speech-to-text. The bare-command rule comes from that.
 

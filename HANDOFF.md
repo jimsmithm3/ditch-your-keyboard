@@ -1,14 +1,13 @@
 # Ditch Your Keyboard handoff
 
-Hands-free voice caddie for GSPro. PySide6 window, Vosk speech, keystrokes into the GSPro window. Python 3.14. Project root `C:\dev\ditch-your-keyboard`. Run `main.py` from that root in PyCharm (SDK "Python 3.14 (ditch-your-keyboard)"). Do not rebuild `dist\ditch-your-keyboard.exe` unless asked. Do not commit unless asked.
+Hands-free voice caddie for GSPro. PySide6 window, Windows speech (WSAPI), keystrokes into the GSPro window. Python 3.14. Project root `C:\dev\ditch-your-keyboard`. Run `main.py` from that root in PyCharm (SDK "Python 3.14 (ditch-your-keyboard)"). Do not rebuild `dist\ditch-your-keyboard.exe` unless asked. Do not commit unless asked.
 
-Copy the whole project folder to the other computer. A git clone is not enough: `models/`, `ditch-your-keyboard.db`, and `current_bag.txt` are gitignored, and this work may be uncommitted. Recreate `.venv` on the other machine rather than copying it. Use `PySide6_Essentials` and `shiboken6` only. Do not install the `PySide6` metapackage; it pulls WebEngine and has deleted `PySide6/__init__.py` before.
+Copy the whole project folder to the other computer. A git clone is not enough: `ditch-your-keyboard.db`, and `current_bag.txt` are gitignored, and this work may be uncommitted. Recreate `.venv` on the other machine rather than copying it. Use `PySide6_Essentials` and `shiboken6` only. Do not install the `PySide6` metapackage; it pulls WebEngine and has deleted `PySide6/__init__.py` before.
 
 ## Run
 
 - Venv: `C:\dev\ditch-your-keyboard\.venv`
-- Wake words: "hey caddie" or "hey caddy". "ditch-your-keyboard" is not in the small Vosk lexicon.
-- Model: `models/vosk-model-small-en-us-0.15`
+- Wake words: "hey caddie" or "hey caddy".
 - Send keys defaults on. The switch is on the Developer page ("Send keys to GSPro"), saved as pref `send_keys_default`. It is no longer on the Voice page.
 - One mic thread. Prefer DirectSound. Open 16000 Hz or resample. Do not call sounddevice from the GUI thread.
 - Focus GSPro once per command (`app/focus.py`: title contains "gspro", AttachThreadInput). On failure, do not send keys; the status bar says why. Do not re-focus between keys.
@@ -21,7 +20,6 @@ Grammar is wake phrases plus commands plus the active player's club phrases and 
 
 Preference `wake_required` (Preferences page, "Wake Phrase Required"), default off: a command is heard on its own, and "hey caddie" is not needed. Turn it on for noisy rooms, which needs a restart like the other voice settings. With it on, a bare wake opens a 5-second window, the window turns light green, and a command in that window fires. A wake plus a command in the same phrase does not flash green. Commands and the stop phrase are also heard alone when it is off, so "stop" stops holds. Recognizer is rebuilt when the player changes. Nicknames only work if every word is in the Vosk model.
 
-Recognizer choice is on Mic setup: Windows speech (WSAPI, default) or Vosk. It is saved as pref `recognizer` and applies after a restart. Windows speech (`app/wsapi_recognizer.py`) listens on the Windows default recording device, not the mic chosen in the app. It answers the same calls as Vosk, so `handle()` in `listener.py` is shared. Vosk still loads for the Mic setup transcript. If Windows speech fails to start, the app falls back to Vosk and logs it. Audio cannot be fed to Windows speech from our own stream: a pipe is refused and a Stream subclass does not get Read calls under pythonnet.
 
 "Continue" on aim left/right, zoom in/out, and tee left/right holds that key down until "hey caddy stop" or "hey caddie stop". It is one `keyDown`, not repeated taps. The key is released on stop, on another command, on player or mic change, if send-keys is turned off, and when the app closes. A counted phrase ("aim left five") is still separate presses, one through ten. Bare phrase is one press.
 
@@ -82,7 +80,7 @@ Do not send a test shot into a live round. The socket is shot data in, and repli
 - `app/launch.py` — "gspro start" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
 - `app/main_window.py` — player, bag summary, status bar, buttons
 - `resources/gspro_clubs.json` — GSPro club enum
-- `ditch-your-keyboard.spec` — PyInstaller datas: `ui/`, `models/`, `resources/`
+- `ditch-your-keyboard.spec` — PyInstaller datas: `ui/`, `resources/`
 
 ## GSPro menu sequences (add new chained commands here)
 

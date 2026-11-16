@@ -11,7 +11,6 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(root / "ui"), "ui"),
-        (str(root / "models"), "models"),
         (str(root / "resources"), "resources"),
     ],
     hiddenimports=[],

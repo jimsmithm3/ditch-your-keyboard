@@ -1,8 +1,7 @@
-"""Build a Windows speech (SRGS) grammar from the same phrase list the Vosk grammar uses.
+"""Build a Windows speech (SRGS) grammar from a phrase list.
 
 Windows speech recognition loads grammars as XML (W3C SRGS). Every phrase is one
 <item> in a single <one-of>, so the recognizer can only return a phrase from the list.
-That matches how the Vosk grammar works today.
 """
 
 import sys

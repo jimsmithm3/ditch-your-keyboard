@@ -1,8 +1,6 @@
 """Wake phrase and GSPro key map.
 
-The small Vosk model has no word "ditch-your-keyboard" (lookup returns -1), so that
-phrase can never match. "hey caddie" / "hey caddy" are in the lexicon.
-Spoken phrases below are words that model does contain.
+Windows speech listens for these phrases, so each one must be a phrase it can recognise.
 """
 
 from app.gspro_tree import SYNC_PHRASES

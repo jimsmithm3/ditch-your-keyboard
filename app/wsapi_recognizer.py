@@ -1,7 +1,7 @@
-"""Windows speech recognition, answering the same calls the listener makes on a Vosk recognizer.
+"""Windows speech recognition: the command recognizer the listener uses.
 
 listener.py calls AcceptWaveform, Result, PartialResult and Reset. This class
-answers them, so the command code is the same for both recognizers.
+answers them.
 
 Windows speech listens on the Windows default recording device by itself. The
 mic chooser and the level meter still use our own stream, but the words come

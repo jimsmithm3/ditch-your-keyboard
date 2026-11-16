@@ -9,11 +9,9 @@ import threading
 import time
 import winsound
 from array import array
-from pathlib import Path
 
 import sounddevice as sd
 from PySide6.QtCore import QObject, Signal
-from vosk import KaldiRecognizer, Model, SetLogLevel
 
 from app import course_chooser, text_entry
 from app import shadows
@@ -101,23 +99,16 @@ from app.commands import (
     repeat_count,
     spoken_text,
 )
-from app.paths import resource_path
 from app.prefs import get_pref
 from app.prefs_page import Tuning, load_tuning
 from app.grammar_words import NAV, TOGGLE
+from app.wsapi_recognizer import WsapiRecognizer
 
 log = logging.getLogger(__name__)
 
 VOICE_PAGES = ("Voice", "Overview")  # pages where voice commands run
 WAKE_REQUIRED_KEY = "wake_required"  # "True" = say "hey caddie" first; "False" = a command is heard alone
 SAMPLE_RATE = 16000
-MODEL_NAME = "vosk-model-small-en-us-0.15"
-
-
-def model_path() -> Path:
-    return resource_path("models", MODEL_NAME)
-
-
 def input_devices() -> list[tuple[int, str]]:
     """One entry per mic. DirectSound keeps the full device name and opens reliably."""
     devices = list(enumerate(sd.query_devices()))
@@ -233,8 +224,7 @@ class VoiceListener(QObject):
         if want == self._course_grammar_on:
             return
         self._course_grammar_on = want
-        if hasattr(rec, "set_group"):  # Vosk has no groups; it listens for all words at once
-            rec.set_group("courses", want)
+        rec.set_group("courses", want)
         self._emit_grammars()
 
     def _emit_grammars(self) -> None:
@@ -251,8 +241,6 @@ class VoiceListener(QObject):
     def _sync_screen_grammar(self, rec) -> None:
         """Listen for a screen's own phrases only while GSPro is on that screen. If the screen is
         not known, all the screen grammars are on, as before. If GSPro is closed, none are."""
-        if not hasattr(rec, "set_group"):  # Vosk has no groups; it listens for all words at once
-            return
         screen = current_screen()
         panel = current_panel()
         if panel is not None:
@@ -312,21 +300,15 @@ class VoiceListener(QObject):
         if not devices:
             self.status.emit("No microphone found")
 
-        path = model_path()
-        if not path.is_dir():
-            self.status.emit(f"Missing speech model: {path}")
-            return
-        self.status.emit("Loading speech model…")
-        SetLogLevel(-1)
+        self.status.emit("Starting Windows speech…")
         try:
-            model = Model(str(path))
             # One grammar for the wake words and the commands. A separate wake
             # grammar turns the command into [unk] before the command listener
             # ever sees it, unless the result is exactly "hey caddy".
-            rec = _build_recognizer(model)
+            rec = _build_recognizer()
         except Exception as exc:
-            log.exception("model load failed")
-            self.status.emit(f"Speech model failed: {exc}")
+            log.exception("windows speech failed to start")
+            self.status.emit(f"Windows speech failed: {exc}")
             return
 
         audio_q: queue.Queue[bytes] = queue.Queue()
@@ -827,11 +809,7 @@ class VoiceListener(QObject):
                             idle_status()
                         voice_on = listening
                         if capturing and capture_rec is None:
-                            capture_rec = KaldiRecognizer(
-                                model,
-                                SAMPLE_RATE,
-                                _grammar(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases() + course_phrases() + (UNKNOWN_TOKEN,)),
-                            )
+                            capture_rec = _capture_recognizer()
                             capture_db.clear()
                         elif not capturing:
                             capture_rec = None
@@ -840,7 +818,7 @@ class VoiceListener(QObject):
                         release()
                         armed_until = 0.0
                         _close_recognizer(rec)
-                        rec = _build_recognizer(model)
+                        rec = _build_recognizer()
                         self._course_grammar_on = False  # the new recognizer starts with the course grammar off
                         self._screen_groups_on = set()  # and with every screen grammar off
                         if kind == "courses":
@@ -951,42 +929,31 @@ def describe_heard(raw: str) -> str:
     return " ".join("(unknown)" if token == UNKNOWN_TOKEN else token for token in tokens)
 
 
-def _grammar(phrases: tuple[str, ...]) -> str:
-    return json.dumps(list(phrases))
-
-
-RECOGNIZER_KEY = "recognizer"  # "wsapi" (Windows speech, default) or "vosk"
-
-
 EXIT_PHRASES = ("confirm exit",)  # the second step; only heard when the Confirm Exit preference is on
 
 
-def _build_recognizer(model):
-    """The command recognizer: always-listening phrases, the course names, and one grammar per screen."""
+def _command_phrases() -> tuple[str, ...]:
+    """Every phrase the command recognizer can hear, with the optional confirm exit left out unless it is on."""
     from app.prefs import get_pref
 
     always, screen_grammars = recognizer_setup(tuple(spoken_phrases()))
     if get_pref("confirm_exit", "False") != "True":
         always = tuple(p for p in always if p not in EXIT_PHRASES)
         screen_grammars = {key: tuple(p for p in phrases if p not in EXIT_PHRASES) for key, phrases in screen_grammars.items()}
+    return always, screen_grammars
+
+
+def _build_recognizer() -> WsapiRecognizer:
+    """The command recognizer: always-listening phrases, the course names, and one grammar per screen. Each group is
+    turned on and off as the screen changes (see the listener)."""
+    always, screen_grammars = _command_phrases()
     groups = {"courses": course_phrases(), DIALOG_GROUP: DIALOG_PHRASES, GRID_GROUP: GRID_PHRASES, **screen_grammars}
-    return _new_recognizer(model, WAKE_PHRASES + always, groups)
+    return WsapiRecognizer(WAKE_PHRASES + always, groups)
 
 
-def _new_recognizer(model, phrases: tuple[str, ...], groups: dict[str, tuple[str, ...]] | None = None):
-    """Windows speech when chosen and it starts. Otherwise Vosk, so voice control still works.
-    Groups are listened for only when switched on. Vosk cannot switch them, so it gets them all."""
-    from app.prefs import get_pref
-
-    if get_pref(RECOGNIZER_KEY, "wsapi") == "wsapi":
-        try:
-            from app.wsapi_recognizer import WsapiRecognizer
-
-            return WsapiRecognizer(phrases, groups)
-        except Exception:
-            log.exception("windows speech failed to start, using Vosk")
-    everything = tuple(phrases) + tuple(p for group in (groups or {}).values() for p in group)
-    return KaldiRecognizer(model, SAMPLE_RATE, _grammar(everything))
+def _capture_recognizer() -> WsapiRecognizer:
+    """The Mic setup page's transcript: the same words, all at once, so the page shows what the commands would hear."""
+    return WsapiRecognizer(WAKE_PHRASES + tuple(COMMANDS) + spoken_phrases() + course_phrases() + (UNKNOWN_TOKEN,))
 
 
 def _close_recognizer(rec) -> None:

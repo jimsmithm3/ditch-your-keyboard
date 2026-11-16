@@ -22,7 +22,7 @@ class Club:
         self.group = group
 
 
-# Bag order, driver toward putter. Spoken phrases are words in the small Vosk lexicon.
+# Bag order, driver toward putter. Spoken phrases are the words Windows speech listens for.
 # Club phrases start with "club" so a club name is not heard as a digit or another word.
 CATALOG = (
     Club("Driver", ("club driver",), "woods"),

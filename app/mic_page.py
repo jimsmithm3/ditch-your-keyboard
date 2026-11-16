@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
-    QRadioButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -30,7 +29,6 @@ from PySide6.QtWidgets import (
 )
 
 from app.prefs import get_pref, set_pref
-from app.listener import RECOGNIZER_KEY
 from app.prefs_page import OFFSET_KEY, saved_offset
 
 BASELINE_KEY = "baseline_room_db"
@@ -63,24 +61,12 @@ class MicSetupPage(QWidget):
         level_row.addWidget(self._db)
 
         recognizer = QGroupBox("Recognizer")
-        self._vosk = QRadioButton("Vosk (offline)")
-        self._wsapi = QRadioButton("Windows speech API (WSAPI)")
-        self._wsapi.setToolTip(
-            "Listens on the Windows default recording device, not the mic chosen above. "
-            "Takes effect after a restart."
+        self._recognizer_note = QLabel(
+            "Windows speech listens on the Windows default recording device, not the mic chosen above. "
+            "Set that device in Windows Sound settings to your mic. The chooser above still drives the level meter."
         )
-        self._vosk.setToolTip("Takes effect after a restart.")
-        wsapi_on = get_pref(RECOGNIZER_KEY, "wsapi") == "wsapi"
-        self._wsapi.setChecked(wsapi_on)
-        self._vosk.setChecked(not wsapi_on)
-        self._wsapi.toggled.connect(self._on_recognizer)
-        self._recognizer_note = QLabel()
         self._recognizer_note.setWordWrap(True)
-        group_layout = QVBoxLayout(recognizer)
-        group_layout.addWidget(self._wsapi)
-        group_layout.addWidget(self._vosk)
-        group_layout.addWidget(self._recognizer_note)
-        self._show_recognizer_note()
+        QVBoxLayout(recognizer).addWidget(self._recognizer_note)
 
         self._note = QLabel(
             "Capture audio: shows words the command grammar knows. Speech it can't "
@@ -180,21 +166,6 @@ class MicSetupPage(QWidget):
             self._recent.popleft()
         mean = sum(level for _, level in self._recent) / len(self._recent)
         self._db.setText(_db_text(mean))
-
-    def _on_recognizer(self, wsapi_checked: bool) -> None:
-        set_pref(RECOGNIZER_KEY, "wsapi" if wsapi_checked else "vosk")
-        self._show_recognizer_note()
-
-    def _show_recognizer_note(self) -> None:
-        if self._wsapi.isChecked():
-            text = (
-                "Windows speech hears the Windows default recording device. Set that device "
-                "in Windows Sound settings to your mic. The chooser above still drives the "
-                "level meter. Restart the app after changing this."
-            )
-        else:
-            text = "Vosk hears the mic chosen above. Restart the app after changing this."
-        self._recognizer_note.setText(text)
 
     def _copy_rows(self) -> None:
         """Copy selected rows (or all rows) as tab-separated text, header first, so it pastes into a spreadsheet."""
