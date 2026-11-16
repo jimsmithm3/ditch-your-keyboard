@@ -139,6 +139,12 @@ _ui_hidden = False
 _map_expanded = False  # the mini map on the course screen; S toggles it, so we track each toggle
 
 
+def set_map_expanded(expanded: bool) -> None:
+    """Set the app's map flag from what the screen shows (see app/map_state.py)."""
+    global _map_expanded
+    _map_expanded = expanded
+
+
 def toggle_map() -> None:
     """Call when the S key (expand or shrink map) is sent."""
     global _map_expanded

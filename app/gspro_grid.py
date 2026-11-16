@@ -297,17 +297,48 @@ _placing_flag = False  # True for "place pin": the flag is placed with Shift hel
 _restore_small = False  # True while the map is large only for ball placement; it goes back to small after
 
 
-def _map_to_large() -> None:
-    """Ball placement only works on the large map. If the map is small, press S to make it large first."""
-    global _restore_small
-    from app.gspro_sequences import map_expanded, toggle_map
+def _live_map_state(hwnd: int) -> str:
+    """The mini map's size as the screen shows it right now (see app/map_state.py)."""
+    from app.map_state import read_map_state
 
-    if map_expanded():
-        return  # already large: nothing to do with the map
+    rect = client_rect(hwnd)
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    dc = user32.GetDC(0)
+    try:
+        def probe(fx: float, fy: float) -> tuple[int, int, int]:
+            x, y = _point(rect, (fx, fy))
+            color = gdi32.GetPixel(dc, x, y)
+            return (color & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF)
+
+        return read_map_state(probe)
+    finally:
+        user32.ReleaseDC(0, dc)
+
+
+def _map_to_large(hwnd: int) -> bool:
+    """Ball placement only works on the large map. The screen decides: if it shows the small map, press S once and
+    check again. The app's flag follows what the screen shows. False if DYK cannot tell what it is looking at."""
+    global _restore_small
+    from app.gspro_sequences import set_map_expanded
+
+    state = _live_map_state(hwnd)
+    log.info("place ball: the screen shows the map as %s", state)
+    if state == "unknown":
+        set_status("DYK is lost: it can't read the mini map. Say sync map small or sync map large, then place ball again.")
+        return False
+    if state == "large":
+        set_map_expanded(True)
+        return True
     press_keys("s")
-    toggle_map()  # keeps the app's flag in step with the key
     time.sleep(MAP_RESIZE_SECONDS)
+    state = _live_map_state(hwnd)
+    set_map_expanded(state == "large")
+    if state != "large":
+        set_status("DYK is lost: the map did not change size. Say sync map small or sync map large, then place ball again.")
+        return False
     _restore_small = True
+    return True
 
 
 def _map_restore() -> None:
@@ -441,7 +472,8 @@ def _place_ball(flag: bool = False) -> None:
         log.info("place %s: GSPro not in front; not started", "flag" if flag else "ball")
         return
     _placing_flag = flag
-    _map_to_large()
+    if not _map_to_large(hwnd):
+        return
     if flag:
         _hold_key("shift", True)
     try:
