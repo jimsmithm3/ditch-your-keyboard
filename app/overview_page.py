@@ -17,7 +17,6 @@ from app.connector_ui import lights
 from app.gspro_sequences import CLOSED, current_screen
 from app.launch import _process_running
 from app.screen_table_dialog import show_screen_table
-from app.grammar_words import NAV, TOGGLE
 from hfg.active import AVAILABLE, active, set_active
 
 log = logging.getLogger(__name__)
@@ -131,7 +130,7 @@ class OverviewPage(QWidget):
             self._game_note.setText(f"Restart the app to use {name}" if chosen else "Restart the app to turn the game off")
 
     def _on_mode(self, on: bool) -> None:
-        self._mode.setText("Voice: listening" if on else f"Voice: PAUSED. Say {TOGGLE} listening.")
+        self._mode.setText("Voice: listening" if on else f"Voice: PAUSED. Say toggle listening.")
         self._mode.setStyleSheet("font-size: 22px; font-weight: bold; color: " + ("#2e7d32;" if on else "#c62828;"))
 
     def _poll(self) -> None:

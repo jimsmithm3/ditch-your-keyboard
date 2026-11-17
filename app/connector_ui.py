@@ -25,7 +25,6 @@ from typing import Callable
 from app.clicks import click
 from app.focus import _force_foreground
 from app.launch import _process_running
-from app.grammar_words import NAV
 
 log = logging.getLogger(__name__)
 

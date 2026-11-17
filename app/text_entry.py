@@ -1,26 +1,35 @@
 """Typing by voice into whatever box has keyboard focus. Reusable: nothing here belongs to one GSPro screen. The
 caller puts focus in the box (a click) and then turns this on.
 
-Spoken: the NATO words for letters, and extended characters (space, underscore, dash, comma, period,
-parenthesis, number sign, plus sign). Each is sent as a keystroke, so the box must have focus. Backspace
-deletes the last character typed here, so a misheard one can be taken back.
+A display is a way of entering text, and it is a screen part of its own kind: it locks out the rest of the screen while
+it is on. Its allowed kinds are or'd together, so the course filter allows numbers, letters and punctuation. The words
+are spoken and each is sent as a keystroke, so the box must have focus. Backspace deletes the last character typed
+here, so a misheard one can be taken back.
 
 Parenthesis alternates: the first one typed is "(" and the next is ")". It works from what is already typed, so
 backspacing a "(" also brings back the "(" rule. Nesting and mismatched brackets are not handled.
 """
 
 import logging
+from dataclasses import dataclass
 
-from app.gspro_screens import GRID_WORDS
+from app.commands import DIGIT_KEYS
+from app.gspro_screens import GRID_WORDS, PUNCTUATION_WORDS
 
 log = logging.getLogger(__name__)
 
-PARENTHESIS = "parenthesis"  # the spoken phrase for both brackets: first "(", then ")"
+NUMBER, LETTER, PUNCTUATION, BACKSPACE = "number", "letter", "punctuation", "backspace"  # the kinds a display can allow
+GRAMMAR_GROUP: dict[str, str] = {
+    NUMBER: "Filter digits", LETTER: "Filter letters", PUNCTUATION: "Filter punctuation", BACKSPACE: "Filter backspace",
+}
+CONTROL_GROUP = "Filter control"  # end filter: listens whenever the display is on
+
 
 # Spoken phrase -> (character typed, key sent, whether shift is held). Letters are the NATO words in order.
 CHARACTERS: dict[str, tuple[str, str, bool]] = {
     word: (chr(ord("a") + index), chr(ord("a") + index), False) for index, word in enumerate(GRID_WORDS)
 }
+CHARACTERS.update({word: (digit, digit, False) for word, digit in DIGIT_KEYS.items()})  # "one" types 1
 CHARACTERS.update(
     {
         "space": (" ", "space", False),
@@ -34,29 +43,51 @@ CHARACTERS.update(
 )
 OPEN_BRACKET = ("(", "9", True)
 CLOSE_BRACKET = (")", "0", True)
+KIND_OF: dict[str, str] = {
+    **{word: NUMBER for word in DIGIT_KEYS},
+    **{word: LETTER for word in GRID_WORDS},
+    **{word: PUNCTUATION for word in PUNCTUATION_WORDS},
+    "backspace": BACKSPACE,  # a property of the display, but it deletes rather than types
+}
+
+
+@dataclass(frozen=True)
+class Display:
+    """A way of entering text. allowed is the set of kinds it takes; a phrase of another kind is not typed here."""
+
+    name: str
+    allowed: frozenset[str]
+
+    def accepts(self, phrase: str) -> bool:
+        """True for a phrase this display types. Backspace is allowed but types nothing, so it is not one of these."""
+        kind = KIND_OF.get(phrase)
+        return (kind in self.allowed and kind != BACKSPACE) or phrase == "parenthesis"
+
+    def grammar_groups(self) -> tuple[str, ...]:
+        """The grammar groups that listen while this display is on: its allowed kinds, then the controls."""
+        kinds = (kind for kind in (NUMBER, LETTER, PUNCTUATION, BACKSPACE) if kind in self.allowed)
+        return (*(GRAMMAR_GROUP[kind] for kind in kinds), CONTROL_GROUP)
+
+
+# The course filter: numbers, letters and punctuation.
+FILTER = Display("filter", frozenset({NUMBER, LETTER, PUNCTUATION, BACKSPACE}))
 
 _active = False
 _typed = ""
-_punctuation = False  # the legend shows the punctuation words instead of the NATO letters
-PUNCTUATION_WORDS: tuple[str, ...] = ("space", "underscore", "dash", "comma", "period", "parenthesis", "number sign", "plus sign")
 
 
 def accepts(phrase: str) -> bool:
-    """True for a phrase this entry types: a NATO word, an extended character, or parenthesis."""
-    return phrase in CHARACTERS or phrase == PARENTHESIS
+    """True for a phrase the filter types: a number word, a NATO word, an extended character, or parenthesis."""
+    return FILTER.accepts(phrase)
+
+
+def grammar_groups() -> tuple[str, ...]:
+    """The grammar groups that listen while typing is on (the filter display's)."""
+    return FILTER.grammar_groups()
 
 
 def active() -> bool:
     return _active
-
-
-def punctuation() -> bool:
-    return _punctuation
-
-
-def set_punctuation(on: bool) -> None:
-    global _punctuation
-    _punctuation = on
 
 
 def typed() -> str:
@@ -65,10 +96,9 @@ def typed() -> str:
 
 def start() -> None:
     """Turn typing on with nothing typed yet."""
-    global _active, _typed, _punctuation
+    global _active, _typed
     _active = True
     _typed = ""
-    _punctuation = False
 
 
 def stop() -> None:
@@ -79,7 +109,7 @@ def stop() -> None:
 def type_phrase(phrase: str) -> str:
     """Type what a phrase means. Returns the character typed."""
     global _typed
-    if phrase == PARENTHESIS:
+    if phrase == "parenthesis":
         char, key, shift = CLOSE_BRACKET if _open_bracket() else OPEN_BRACKET
     else:
         char, key, shift = CHARACTERS[phrase]

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.connector_ui import client_rect, find_window
 from app import text_entry
-from app.gspro_screens import GRID_WORDS
+from app.gspro_screens import GRID_WORDS, PUNCTUATION_WORDS
 from app.gspro_ui import GSPRO_TITLE
 
 # The open column, as fractions of the GSPro window's width and height.
@@ -20,11 +20,28 @@ SHIFT_LEFT_PX = -10  # the list starts this far left of that column; negative mo
 TOP, BOTTOM = 0.10, 0.99  # TOP is the filter box, so the first line ("Filter: ...") sits in it
 
 _widget: QWidget | None = None
+DIGITS_RULE = "digits"  # the row that stands for the digit words: drawn as a rule with {0-9} in the middle
 
 
 def _character(word: str) -> str:
     """The character a punctuation word types, for the list. Parenthesis types both brackets."""
     return text_entry.CHARACTERS[word][0] if word in text_entry.CHARACTERS else "( )"
+
+
+def _draw_digits_rule(painter, x0: float, x1: float, y: float, step: float, metrics) -> None:
+    """The rule between the letters and the punctuation: a horizontal line with {0-9} in the middle, and a short
+    vertical line above and below the label, reaching into the rows either side."""
+    label = "{0-9}"
+    half_label = metrics.horizontalAdvance(label) / 2 + 10
+    half_height = metrics.height() / 2
+    mid = (x0 + x1) / 2
+    painter.setPen(QPen(QColor(242, 242, 242, 200), 2))
+    painter.drawLine(int(x0 + 6), int(y), int(mid - half_label), int(y))
+    painter.drawLine(int(mid + half_label), int(y), int(x1 - 6), int(y))
+    painter.drawLine(int(mid), int(y - step * 0.5), int(mid), int(y - half_height))
+    painter.drawLine(int(mid), int(y + half_height), int(mid), int(y + step * 0.5))
+    painter.setPen(QColor(242, 242, 242, 230))
+    painter.drawText(int(mid - metrics.horizontalAdvance(label) / 2), int(y + half_height - 3), label)
 
 
 class _Legend(QWidget):
@@ -49,27 +66,24 @@ class _Legend(QWidget):
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(QColor(242, 242, 242, 230))
-        if text_entry.punctuation():
-            top, rows = "show letters", [f"{_character(word)}  {word}" for word in text_entry.PUNCTUATION_WORDS]
-        else:
-            top, rows = "show punctuation", [f"{chr(ord('A') + i)}  {word}" for i, word in enumerate(GRID_WORDS)]
-        lines = [top] + rows  # the typed letters are in the search box
+        rows = [f"{chr(ord('A') + i)}  {word}" for i, word in enumerate(GRID_WORDS)]
+        rows.append(DIGITS_RULE)  # the digits: {0-9} is shorthand for the digit words, zero to nine
+        rows += [f"{_character(word)}  {word}" for word in PUNCTUATION_WORDS]
+        rows.append("backspace")  # undoes the last character
         metrics = painter.fontMetrics()
         # A fixed row height, so the list uses only the space its lines need; it only shrinks to fit the window.
-        step = min(metrics.height() + 8, (y1 - y0) / len(lines))
-        painter.fillRect(int(x0), int(y0), int(x1 - x0), int(step * len(lines) + 8), QColor(20, 24, 32, 150))
-        painter.setPen(QPen(QColor(230, 30, 30), 4))  # the red box round the letters, as in help mode
+        step = min(metrics.height() + 8, (y1 - y0) / len(rows))
+        box_height = int(step * len(rows) + 8)
+        painter.fillRect(int(x0), int(y0), int(x1 - x0), box_height, QColor(20, 24, 32, 150))
+        painter.setPen(QPen(QColor(230, 30, 30), 4))  # the red box round the list, as in help mode
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRect(int(x0), int(y0), int(x1 - x0), int(step * len(lines) + 8))
-        painter.setPen(QColor(242, 242, 242, 230))
-        for i, line in enumerate(lines):
-            baseline = int(y0 + step * (i + 1) - step * 0.3)
-            if i == 0:  # the switch is a help label: red background, white text, like the boxes
-                painter.fillRect(QRect(int(x0), baseline - metrics.ascent() - 3, metrics.horizontalAdvance(line) + 12, metrics.height() + 6), QColor(160, 20, 20, 147))
-                painter.setPen(QColor(255, 255, 255))
-            else:
-                painter.setPen(QColor(242, 242, 242, 230))
-            painter.drawText(int(x0 + 6), baseline, line)
+        painter.drawRect(int(x0), int(y0), int(x1 - x0), box_height)
+        for i, line in enumerate(rows):
+            if line == DIGITS_RULE:
+                _draw_digits_rule(painter, x0, x1, y0 + step * (i + 0.5), step, metrics)
+                continue
+            painter.setPen(QColor(242, 242, 242, 230))
+            painter.drawText(int(x0 + 6), int(y0 + step * (i + 1) - step * 0.3), line)
         painter.end()
 
 

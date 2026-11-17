@@ -15,7 +15,6 @@ Only the screen key and the sequence names are used by the app. Phrases are what
 from dataclasses import dataclass
 
 from app.prefs import get_bool
-from app.grammar_words import NAV, TOGGLE
 
 DONE = "done"
 NOT_DONE = "not done"
@@ -67,7 +66,7 @@ SHOW_FAVORITES = Action("Show favorites", "filter favorites", ("filter favorites
 SHOW_INSTALLED = Action("Show installed", "filter installed", ("filter installed",))
 CLEAR_COURSE = Action("Clear course search", "clear filter", ("clear filter",))
 SHOW_MENU = Action("Show game menu", "show game menu", ("show game menu",), shot="training_screen.png")
-EXPAND_MAP = Action("Map resize", f"{TOGGLE} map", (), shot="mini_map_expanded.png")  # keystroke S, not a click
+EXPAND_MAP = Action("Map resize", f"toggle map", (), shot="mini_map_expanded.png")  # keystroke S, not a click
 PLACE_MARKER = Action("Place marker", "place marker", ("place marker",))
 SHRINK_MAP = Action("Shrink map", "shrink map", ())  # keystroke S, not a click
 CHANGE_DISTANCE = Action("Change driving range distance", "change driving range distance", ("change driving range distance",), shot="driving_range_distance_dialog.png")
@@ -85,8 +84,8 @@ SCREENS: tuple[Screen, ...] = (
         "local_match",
         "Local match",
         "home",
-        f"{NAV} play",
-        (f"{NAV} play",),
+        f"begin play",
+        (f"begin play",),
         actions=(PLAY_COURSE, CLEAR_COURSE, SHOW_FAVORITES, SHOW_INSTALLED, BACK, PLAYERS, SETTINGS),
         shot="local_match.png",
     ),
@@ -94,20 +93,20 @@ SCREENS: tuple[Screen, ...] = (
         "practice",
         "Practice",
         "home",
-        f"{NAV} practice",
-        (f"{NAV} practice",),
+        f"begin practice",
+        (f"begin practice",),
         actions=(BACK, PLAYERS, SETTINGS),
         shot="practice_screen.png",
     ),
-    Screen("challenges", "Challenges", "home", f"{NAV} challenges"),
-    Screen("tournaments", "Tournaments", "home", f"{NAV} tournaments"),
-    Screen("online", "Online match", "home", f"{NAV} online match"),
+    Screen("challenges", "Challenges", "home", f"begin challenges"),
+    Screen("tournaments", "Tournaments", "home", f"begin tournaments"),
+    Screen("online", "Online match", "home", f"begin online match"),
     Screen(
         "range",
         "GSPro Range",
         "practice",
-        f"{NAV} gspro practice range",
-        (f"{NAV} gspro practice range", f"{NAV} gspro practice range now"),
+        f"begin gspro practice range",
+        (f"begin gspro practice range", f"begin gspro practice range now"),
         actions=(CHANGE_DISTANCE, END_ROUND),
         shot="gspro_practice_range_screen.png",
     ),
@@ -115,8 +114,8 @@ SCREENS: tuple[Screen, ...] = (
         "on_course",
         "On course practice",
         "practice",
-        f"{NAV} on course practice",
-        (f"{NAV} on course practice", f"{NAV} on course practice now"),
+        f"begin on course practice",
+        (f"begin on course practice", f"begin on course practice now"),
         actions=(PLAY_COURSE, CLEAR_COURSE, SHOW_FAVORITES, SHOW_INSTALLED, BACK, PLAYERS, SETTINGS),
         shot="on_course_practice.png",
     ),
@@ -124,8 +123,8 @@ SCREENS: tuple[Screen, ...] = (
         "additional",
         "Additional Driving Ranges",
         "practice",
-        f"{NAV} additional ranges",
-        (f"{NAV} additional ranges", f"{NAV} additional ranges now"),
+        f"begin additional ranges",
+        (f"begin additional ranges", f"begin additional ranges now"),
         actions=(BACK, PLAYERS, SETTINGS),
         shot="additional_driving_ranges_screen.png",
     ),

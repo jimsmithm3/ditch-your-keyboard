@@ -19,7 +19,6 @@ from app.players import db_path
 
 log = logging.getLogger(__name__)
 
-PREFIX = "play course"  # the spoken words before a course name; commands.COURSE_PHRASE is the "play" part
 GSPRO_DB = Path.home() / "AppData" / "LocalLow" / "GSPro" / "GSPro" / "GSPro.db"
 NOT_COURSES = frozenset({"GSPro Multi Range"})  # GSPro Practice Facility is a playable course
 
@@ -156,8 +155,8 @@ def course_phrases() -> tuple[str, ...]:
         return ()
     phrases: list[str] = []
     for word in words:
-        phrases.append(f"{PREFIX} {word}")
-        phrases.append(f"{PREFIX} {word} now")  # "play <name> now" also starts the round
+        phrases.append(f"play course {word}")
+        phrases.append(f"play course {word} now")  # "play <name> now" also starts the round
     unique = tuple(dict.fromkeys(phrases))
     log.info("course grammar: %d course names", len(unique) // 2)
     return unique

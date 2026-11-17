@@ -83,7 +83,6 @@ from app.gspro_ui import (
     WATCH_MENU,
     WATCH_SCREEN,
 )
-from app.grammar_words import NAV, TOGGLE
 
 log = logging.getLogger(__name__)
 
@@ -102,19 +101,19 @@ _lock = threading.Lock()
 # can be wrong after a manual change. CLOSED means GSPro is not running.
 CLOSED = "closed"
 SCREEN_AFTER: dict[str, str] = {
-    f"{NAV} practice": "practice",
-    f"{NAV} gspro practice range now": "range",
-    f"{NAV} on course practice now": "on_course",
-    f"{NAV} additional ranges now": "additional",
-    f"{NAV} gspro practice range": "range",
-    f"{NAV} challenges": "challenges",
-    f"{NAV} tournaments": "tournaments",
-    f"{NAV} online match": "online",
+    f"begin practice": "practice",
+    f"begin gspro practice range now": "range",
+    f"begin on course practice now": "on_course",
+    f"begin additional ranges now": "additional",
+    f"begin gspro practice range": "range",
+    f"begin challenges": "challenges",
+    f"begin tournaments": "tournaments",
+    f"begin online match": "online",
     "confirm": "home",  # the end round dialog's CONFIRM goes back to the home screen
     "application exit": CLOSED,
-    f"{NAV} on course practice": "on_course",
-    f"{NAV} additional ranges": "additional",
-    f"{NAV} play": "local_match",
+    f"begin on course practice": "on_course",
+    f"begin additional ranges": "additional",
+    f"begin play": "local_match",
     "now": "play",  # PLAY on round settings starts the course
 }
 def _startup_screen() -> str:
@@ -201,7 +200,7 @@ MARKER_DIRECTIONS: dict[str, tuple[int, int]] = {
 # Voice phrases for the two course-screen modes. Map mode holds the mouse button; free flight
 # mode is F5 in GSPro.
 MAP_MODE_PHRASES = ()  # map mode start and end were removed: the grid does the map work now
-FLIGHT_TOGGLE_PHRASES = (f"{TOGGLE} free flight", f"{TOGGLE} flight")  # one phrase: F5 turns it on, then off
+FLIGHT_TOGGLE_PHRASES = (f"toggle free flight", f"toggle flight")  # one phrase: F5 turns it on, then off
 
 _marker_offset: tuple[float, float] = (0.0, 0.0)
 _marker_direction: tuple[int, int] | None = None
@@ -353,7 +352,7 @@ def flight_mode_start() -> str:
     if not _press_f5():
         return "could not bring GSPro to the front; not started"
     _flight_mode = True
-    return f"Free flight mode on; say {TOGGLE} free flight to leave"
+    return f"Free flight mode on; say toggle free flight to leave"
 
 
 def flight_mode_end() -> str:
@@ -575,6 +574,7 @@ def close_wind() -> str:
 # "slide left" / "slide right" move the drag from where the pointer is, so they only work while the pointer is still on
 # the ball of the slider just changed. Set by a change command that starts a drag; cleared by any other command.
 _slide_ready = False
+_slider_owner: tuple = (None, None)  # the (screen, panel) a drag started on; a slide stops when that changes
 
 
 def clear_slide() -> None:
@@ -583,7 +583,7 @@ def clear_slide() -> None:
 
 
 def slider_start(name: str) -> str:
-    global _slider_name, _slider_x, _slider_y, _slider_right, _slider_down, _slider_thread, _slide_ready
+    global _slider_name, _slider_x, _slider_y, _slider_right, _slider_down, _slider_thread, _slide_ready, _slider_owner
     if name in ("change max distance", "change min distance") and not _randomizer_on:
         return f"{name}: random is off, so the distance is typed; say random on first"
     if name in ("slide left", "slide right") and not _slide_ready:
@@ -594,6 +594,8 @@ def slider_start(name: str) -> str:
     elif name == "change driving range distance":  # the top bar slider: no panel needed, only the range screen
         if _screen != "range" or _panel is not None:
             return f"{name}: say GSPro practice range first"
+    elif name in ("slide left", "slide right") and _screen == "range":
+        pass  # a slide is a screen command: from the pointer, after a change command, with or without a panel
     elif _screen != "range" or _panel != PREFERENCES_PANEL:
         return f"{name}: open prefs first"
     if motion_active():
@@ -626,6 +628,9 @@ def slider_start(name: str) -> str:
     _slider_down = True
     time.sleep(PRESS_SECONDS)  # let GSPro take the press before the thumb moves
     _slider_name, _slider_x, _slider_y, _slider_right = name, left, y, right
+    _slider_owner = (_screen, _panel)
+    if name in ("slide left", "slide right"):
+        log.info("%s: start pixel %s (fraction x=%.4f y=%.4f), step %.6f", name, (x_px, y_px), left, y, step)
     _slider_low, _slider_step = low, step
     _slider_history.clear()
     _slider_history.append((time.monotonic(), left))
@@ -640,7 +645,9 @@ def slider_start(name: str) -> str:
 
 def _slider_panel_open() -> bool:
     """The panel the running drag belongs to is still open: the wind panel for the wind sliders, the driving
-    preferences panel on the range for the others."""
+    preferences panel on the range for the others. A slide belongs to the panel it started on."""
+    if _slider_name in ("slide left", "slide right"):
+        return (_screen, _panel) == _slider_owner
     if _slider_name in WIND_SLIDERS:
         return _panel == WIND_PANEL
     if _slider_name == "change driving range distance":  # the top bar slider: no panel, only the range screen
@@ -648,8 +655,12 @@ def _slider_panel_open() -> bool:
     return _screen == "range" and _panel == PREFERENCES_PANEL
 
 
+_slider_ticks = 0  # moves made by the running drag, for the slide log
+
+
 def _slider_loop() -> None:
-    global _slider_x
+    global _slider_x, _slider_ticks
+    _slider_ticks = 0
     while not _slider_stop_event.is_set():
         if not _slider_panel_open():
             break  # the panel closed or the screen changed under us
@@ -660,6 +671,9 @@ def _slider_loop() -> None:
         _slider_x = min(max(_slider_x + _slider_step, _slider_low), _slider_right)  # holds at the end until stop
         _slider_history.append((time.monotonic(), _slider_x))
         _send(MOUSEEVENTF_MOVE, *_point(rect, (_slider_x, _slider_y)))
+        _slider_ticks += 1
+        if _slider_name in ("slide left", "slide right") and _slider_ticks % 20 == 0:
+            log.info("%s: tick %d at pixel %s", _slider_name, _slider_ticks, _point(rect, (_slider_x, _slider_y)))
         _slider_stop_event.wait(MARKER_TICK_SECONDS)
     # Ended without "stop" (panel closed, GSPro gone): let go so the button is not left down.
     hwnd = find_window(GSPRO_TITLE)
@@ -772,30 +786,30 @@ class Step:
 
 
 SEQUENCES: dict[str, tuple[Step, ...]] = {
-    f"{NAV} practice": (Step("PRACTICE", PRACTICE_CARD),),
-    f"{NAV} gspro practice range": (Step("PRACTICE RANGE", RANGE_CARD),),
+    f"begin practice": (Step("PRACTICE", PRACTICE_CARD),),
+    f"begin gspro practice range": (Step("PRACTICE RANGE", RANGE_CARD),),
     # Home shortcuts: the practice screen is passed through, so these need no practice-screen grammar.
-    f"{NAV} gspro practice range now": (
+    f"begin gspro practice range now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("PRACTICE RANGE", RANGE_CARD),
     ),
-    f"{NAV} on course practice now": (
+    f"begin on course practice now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),
     ),
-    f"{NAV} additional ranges now": (
+    f"begin additional ranges now": (
         Step("PRACTICE", PRACTICE_CARD, WATCH_SCREEN),
         Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),
     ),
     "back screen": (Step("BACK", BACK_BUTTON),),
     "application exit": (Step("EXIT", EXIT_BUTTON, quiet=HOME_WATCH),),
-    f"{NAV} on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
-    f"{NAV} additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
-    f"{NAV} play": (Step("LOCAL MATCH", LOCAL_CARD, WATCH_SCREEN),),
+    f"begin on course practice": (Step("ON COURSE PRACTICE", ON_COURSE_CARD, WATCH_SCREEN),),
+    f"begin additional ranges": (Step("ADDITIONAL RANGES", ADDITIONAL_CARD, WATCH_SCREEN),),
+    f"begin play": (Step("LOCAL MATCH", LOCAL_CARD, WATCH_SCREEN),),
     # The other home buttons. The screen is left to the game; the watch shows the list opening.
-    f"{NAV} challenges": (Step("CHALLENGES", CHALLENGES_CARD, WATCH_SCREEN),),
-    f"{NAV} tournaments": (Step("TOURNAMENTS", TOURNAMENTS_CARD, WATCH_SCREEN),),
-    f"{NAV} online match": (Step("ONLINE MATCH", ONLINE_CARD, WATCH_SCREEN),),
+    f"begin challenges": (Step("CHALLENGES", CHALLENGES_CARD, WATCH_SCREEN),),
+    f"begin tournaments": (Step("TOURNAMENTS", TOURNAMENTS_CARD, WATCH_SCREEN),),
+    f"begin online match": (Step("ONLINE MATCH", ONLINE_CARD, WATCH_SCREEN),),
     # Plays the course that is set up on round settings. "play course" with no name does the same.
     "now": (Step("PLAY", ROUND_PLAY),),
     "players tab": (Step("PLAYERS TAB", ROUND_TAB_PLAYERS),),
@@ -810,11 +824,11 @@ SEQUENCES: dict[str, tuple[Step, ...]] = {
     "close prefs": (Step("PREFERENCES", PANEL_CLOSE_CHEVRON),),  # the up arrow on the open panel
     "random on": (Step("RANDOMIZER", RANDOMIZER_ICON),),  # a click toggles it; the app cannot read the state
     "random off": (Step("RANDOMIZER", RANDOMIZER_ICON),),
-    "change shots per one": (Step("SHOTS 1", SHOTS_1),),
-    "change shots per three": (Step("SHOTS 3", SHOTS_3),),
-    "change shots per five": (Step("SHOTS 5", SHOTS_5),),
-    "change shots per ten": (Step("SHOTS 10", SHOTS_10),),
-    "change shots per fifteen": (Step("SHOTS 15", SHOTS_15),),
+    "shots per one": (Step("SHOTS 1", SHOTS_1),),
+    "shots per three": (Step("SHOTS 3", SHOTS_3),),
+    "shots per five": (Step("SHOTS 5", SHOTS_5),),
+    "shots per ten": (Step("SHOTS 10", SHOTS_10),),
+    "shots per fifteen": (Step("SHOTS 15", SHOTS_15),),
     "clear filter": (Step("CLEAR SEARCH", CLEAR_SEARCH_CLICK, key="backspace"),),
     "filter favorites": (Step("FAVORITES", FILTER_FAVORITES),),
     "filter installed": (Step("INSTALLED", FILTER_INSTALLED),),
@@ -897,18 +911,34 @@ SAME_SCREEN_SEQUENCES = (
     "close prefs",
     "random on",
     "random off",
-    "change shots per one",
-    "change shots per three",
-    "change shots per five",
-    "change shots per ten",
-    "change shots per fifteen",
+    "shots per one",
+    "shots per three",
+    "shots per five",
+    "shots per ten",
+    "shots per fifteen",
 )
 # Panels: the sequence that opens each panel, and the sequences that close the panel that is open.
 GAME_MENU_PANEL = "game_menu_panel"  # the game menu: its grammar replaces the screen's while it is up
 MENU_SCREENS = ("range", "course_practice", "play")  # the screens the game menu opens on
 PANEL_OPENERS: dict[str, str] = {"open prefs": "driving_preferences_panel", "end round": "end_round_confirm", "show game menu": GAME_MENU_PANEL}
 PANEL_CLOSERS: tuple[str, ...] = ("apply", "close prefs", "confirm", "cancel")
-_panel: str | None = None  # the panel open right now; its grammar is the one listened for
+NOTES_VIEW = "notes_view"  # the show notes view on the course list (its details); opened and closed by course_chooser
+FILTER_VIEW = "filter_view"  # the filter view on the course list (the FILTERS button); the notes view's details give way to it
+_view: str | None = None  # the view open on the course list right now; its words add to the screen's
+_panel: str | None = None  # the panel open right now; its grammar is the one listened for (views are kept apart from these)
+
+
+def set_view(key: str | None) -> None:
+    """course_chooser sets the course list's view: the notes view or the filter view, or None for neither."""
+    global _view
+    _view = key
+
+
+def current_view() -> str | None:
+    global _view
+    if _view is not None and _screen not in COURSE_LIST_SCREENS:
+        _view = None  # the views belong to the course list (on course practice, additional ranges and local match)
+    return _view
 
 
 def current_panel() -> str | None:
@@ -940,13 +970,13 @@ def _read_random() -> None:
     """Looks at the Max Distance box on the open panel and sets the randomizer state from its colour."""
     global _randomizer_on
     time.sleep(PANEL_LOAD_SECONDS)  # the panel takes a moment to draw
-    from app.course_chooser import _row_colour
+    from app.gspro_pixels import pixel_colour
 
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None or current_panel() != PREFERENCES_PANEL:
         return
     rect = client_rect(hwnd)
-    darkest = min(sum(_row_colour(*_point(rect, point))) for point in RANDOM_BOX_POINTS)
+    darkest = min(sum(pixel_colour(*_point(rect, point))) for point in RANDOM_BOX_POINTS)
     _randomizer_on = darkest < RANDOM_DARK_SUM
     log.info("randomizer read from the screen: darkest sum %d -> %s", darkest, "on" if _randomizer_on else "off")
 
@@ -960,10 +990,10 @@ def refresh_random() -> None:
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
         return
-    from app.course_chooser import _row_colour
+    from app.gspro_pixels import pixel_colour
 
     rect = client_rect(hwnd)
-    darkest = min(sum(_row_colour(*_point(rect, point))) for point in RANDOM_BOX_POINTS)
+    darkest = min(sum(pixel_colour(*_point(rect, point))) for point in RANDOM_BOX_POINTS)
     _randomizer_on = darkest < RANDOM_DARK_SUM
 
 
@@ -1286,10 +1316,43 @@ def _park_cursor(hwnd: int) -> None:
     ctypes.windll.user32.SetCursorPos(x, y)
 
 
+# Shortcuts from the home screen: each skips the practice screen, so they run the whole path. They have their own
+# names ("skip to ...", no "now"), so they do not clash with the practice screen's "begin ..." phrases.
+HOME_SHORTCUTS: dict[str, str] = {
+    "skip to gspro practice range": f"begin gspro practice range now",
+    "skip to on course practice": f"begin on course practice now",
+    "skip to additional ranges": f"begin additional ranges now",
+}
+for _spoken, _path in HOME_SHORTCUTS.items():
+    SEQUENCES[_spoken] = SEQUENCES[_path]  # the listener routes a phrase by its sequence name
+    SCREEN_AFTER[_spoken] = SCREEN_AFTER[_path]
+
+
+REVEAL_LEFT_PX = 50  # row one, this far left of its notes icon: a click on the row, not a button, so FILTERS shows
+FILTER_PHRASES = ("filter favorites", "filter installed", "filter all", "filter trending", "clear filter")  # these change the list
+
+
+def _refresh_overlay() -> None:
+    """Read the rows again and redraw the overlay: the list has changed."""
+    from app.course_chooser import scan_rows_async  # imported here: course_chooser imports this module
+
+    scan_rows_async()
+
+
+def _reveal_filters(hwnd) -> None:
+    """The screen's start-up step: a click on row one that shows the FILTERS button at the upper right."""
+    from app.course_chooser import COURSE_LIST  # imported here: course_chooser imports this module
+
+    x, y = _point(client_rect(hwnd), COURSE_LIST.point(1, "notes"))
+    click(x - REVEAL_LEFT_PX, y, "row one, left of its notes icon: shows the FILTERS button")
+
+
 def _run(name: str) -> str:
     global _screen
     if _screen == CLOSED:
         return f"GSPro is not running. Say start application."
+    if _screen == "home" and name in HOME_SHORTCUTS:
+        name = HOME_SHORTCUTS[name]  # the whole path from home
     if name in ("filter favorites", "filter installed", "filter all", "filter trending", "clear filter") and _screen not in COURSE_LIST_SCREENS:
         return f"{name}: say on course practice first"
     if name == "now" and _screen not in ROUND_SETTINGS_SCREENS:
@@ -1356,13 +1419,23 @@ def _run(name: str) -> str:
         if number < len(steps) and not _force_foreground(hwnd):
             log.warning("%s: lost GSPro focus after %s", name, step.label)
             return f"{name}: lost GSPro focus after {step.label}; stopped"
-    if name in (f"{NAV} on course practice", f"{NAV} on course practice now", f"{NAV} play"):
+    if name in (f"begin on course practice", f"begin on course practice now", f"begin play"):
         # The list takes a moment to fill. Then clear the old search so the full list shows.
         # Local match keeps its search too, so it gets the same clear.
         if _wait_until_still(hwnd, COURSE_LIST_WATCH) is None:
             log.warning("%s: list kept moving; clearing the filter anyway", name)
         time.sleep(_settle_floor(short=True))  # the course list is quick, so the filter clear can run sooner
         _clear_course_filter(hwnd)
+    if name in ("begin additional ranges", "begin additional ranges now"):
+        # Same list as on course practice: clear the old search, then click row one so the FILTERS button shows.
+        if _wait_until_still(hwnd, COURSE_LIST_WATCH) is None:
+            log.warning("%s: list kept moving; clearing the filter anyway", name)
+        time.sleep(_settle_floor(short=True))
+        _clear_course_filter(hwnd)
+        _reveal_filters(hwnd)
+    if name in FILTER_PHRASES:
+        time.sleep(0.3)  # the list redraws after the filter click
+        _refresh_overlay()  # the row contents have changed, so read the rows and redraw the overlay
     log.info("%s: done in %.1f s", name, time.monotonic() - started)
     if name not in PARK_EXEMPT:
         _park_cursor(hwnd)

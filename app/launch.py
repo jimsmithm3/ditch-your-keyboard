@@ -4,7 +4,6 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from app.grammar_words import NAV
 
 log = logging.getLogger(__name__)
 

@@ -32,8 +32,9 @@ from app.gspro_screens import (
     GRID_PHRASES,
     GROUP_GRAMMAR_NAMES,
     PANEL_GROUP_NAMES,
-    PANELS,
+    VIEW_GROUP_NAMES,
     SCREEN_GROUP_NAMES,
+    overlay_phrases,
     SCREEN_RECORDS,
     grammar_name,
     panel_group,
@@ -196,8 +197,8 @@ def _group_column(group: str, spoken) -> tuple[str, list[str]]:
     """One listening grammar: its readable name, then its commands by primary name."""
     if group.startswith("screen:"):
         return grammar_name(group), _primaries(screen_phrases(group[len("screen:"):]))
-    if group.startswith("panel:"):
-        return grammar_name(group), _primaries(PANELS.get(group[len("panel:"):], ()))
+    if group.startswith(("panel:", "view:")):
+        return grammar_name(group), _primaries(overlay_phrases(group.split(":", 1)[1]))
     if group.startswith("group:"):
         return grammar_name(group), _primaries(group_phrases(group[len("group:"):], spoken))
     if group == GRID_GROUP:
@@ -218,7 +219,7 @@ def _active_columns() -> list[tuple[str, list[str]]]:
 
 def _all_grammars() -> list[str]:
     """Every grammar the app can switch on, by group name."""
-    return [*SCREEN_GROUP_NAMES, *PANEL_GROUP_NAMES, *GROUP_GRAMMAR_NAMES, GRID_GROUP]
+    return [*SCREEN_GROUP_NAMES, *PANEL_GROUP_NAMES, *VIEW_GROUP_NAMES, *GROUP_GRAMMAR_NAMES, GRID_GROUP]
 
 
 def build_active_page() -> QWidget:

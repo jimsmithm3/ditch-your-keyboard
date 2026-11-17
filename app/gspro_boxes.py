@@ -1,4 +1,4 @@
-"""The help boxes: "toggle help" draws a red box over each button on the GSPro screen the app thinks it is on,
+"""The help boxes: "toggle overlay" draws a red box over each button on the GSPro screen the app thinks it is on,
 labelled with what to say to press it. Only single clicks get a box. A chain ("click gspro practice range now") has no box,
 since it presses several buttons. When one widget has more than one command, its box is labelled with them all,
 separated by " | " (the search box holds "use filter" and "clear filter"; a course row holds "play row" and
@@ -16,27 +16,25 @@ from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from app import text_entry
 from app.connector_ui import client_rect, find_window
 from app.course_chooser import (
     said_course,
     DESCRIPTION_CLOSE,
-    DOWNLOAD_WORDS,
-    FAVORITE_X,
-    FIRST_ROW_Y,
+    COURSE_LIST,
     HISTORY_CLOSE,
-    NOTES_X,
     PANEL_CLOSE,
     PANEL_PLAY,
     read_more_present,
     row_state,
     READ_MORE,
     ROUND_HISTORY,
-    ROW_STEP,
-    panel_open,
-    panel_state,
+    dialog_state,
+    list_mode,
+    notes_view_has_cancel,
 )
 from app.gspro_screens import RECORDS_BY_KEY, group_phrases
-from app.gspro_sequences import GAME_MENU_PANEL, SEQUENCES, current_panel, current_screen, randomizer_on, refresh_random
+from app.gspro_sequences import COURSE_LIST_SCREENS, FILTER_VIEW, GAME_MENU_PANEL, NOTES_VIEW, SEQUENCES, current_panel, current_screen, current_view, randomizer_on, refresh_random
 from app.gspro_ui import (
     CANCEL_BUTTON,
     CONFIRM_BUTTON,
@@ -69,7 +67,6 @@ from app.gspro_ui import (
     SEARCH_BOX,
     TOURNAMENTS_CARD,
 )
-from app.grammar_words import NAV, TOGGLE
 
 log = logging.getLogger(__name__)
 
@@ -77,28 +74,35 @@ REFRESH_MS = 500  # follows the screen and the GSPro window while the boxes are 
 GW_HWNDPREV = 3  # the window just above another in the stack
 SWP_NOACTIVATE = 0x0010
 SWP_SHOWWINDOW = 0x0040
-# Course row boxes (estimates from the row layout: buttons start at x 0.59, rows are ROW_STEP apart)
-ROW_BUTTON_CENTRE_X = 0.635  # the Play or Download button of a row
-ROW_BUTTON_WIDTH = 0.09
-ROW_HALF_HEIGHT = 0.02  # half the height of a row box
-ICON_WIDTH = 0.03  # the favorite heart and the notes icon
 CARD_SIZE = (0.16, 0.33)  # a button tile on the home or practice screen, as a fraction of the window
 BUTTON_SIZE = (0.12, 0.06)  # any other button (BACK, EXIT)
 CARDS = {LOCAL_CARD, PRACTICE_CARD, CHALLENGES_CARD, TOURNAMENTS_CARD, ONLINE_CARD, ON_COURSE_CARD, ADDITIONAL_CARD, RANGE_CARD}
-# Two looks for the help. The red one is the default; toggle help look swaps to the gentle blue one.
+# Two looks for the overlay. The red one is the default; overlay look swaps to the gentle blue one.
 RED_LOOK = {
-    "box": QColor(230, 30, 30), "width": 4, "label": QColor(160, 20, 20, 147),
+    "box": QColor(230, 30, 30), "width": 3, "label": QColor(160, 20, 20, 147),
     "text": QColor(255, 255, 255), "header": QColor(110, 110, 110),
 }
 GENTLE_LOOK = {
-    "box": QColor(40, 120, 220), "width": 2, "label": QColor(190, 225, 250, 220),
+    "box": QColor(8, 40, 110), "width": 3, "label": QColor(190, 225, 250, 220),  # dark navy, so the box shows against the light label
     "text": QColor(15, 35, 60), "header": QColor(200, 205, 212),
 }
-_gentle = True  # the blue look is the default; "help red" switches to the red one
+_gentle = True  # the blue look is the default; "overlay red" switches to the red one
 BOX_COLOUR = QColor(230, 30, 30)
 BOX_WIDTH = 4
 LABEL_COLOUR = QColor(255, 255, 255)
 LABEL_BACKGROUND = QColor(160, 20, 20, 147)  # a third more transparent than 220
+
+
+FONT_POINTS = 14  # the overlay label size; "overlay larger" and "overlay smaller" change it by one
+FONT_MIN, FONT_MAX = 8, 28
+
+
+def change_font(step: int) -> str:
+    """Make the overlay labels bigger (step 1) or smaller (step -1). The window repaints on its next tick."""
+    global FONT_POINTS
+    FONT_POINTS = max(FONT_MIN, min(FONT_MAX, FONT_POINTS + step))
+    log.info("overlay font: %d pt", FONT_POINTS)
+    return f"Overlay font: {FONT_POINTS} pt"
 
 
 def set_look(gentle: bool) -> str:
@@ -110,20 +114,22 @@ def set_look(gentle: bool) -> str:
     LABEL_BACKGROUND, LABEL_COLOUR = look["label"], look["text"]
     SCREEN_CMDS_HEADER_BG = look["header"]
     log.info("help look set: %s", "blue" if _gentle else "red")
-    return "Help: blue" if _gentle else "Help: red"
+    return "Overlay: blue" if _gentle else "Overlay: red"
 
 
 
 LABEL_MIN_WRAP_SHARE = 0.03  # a line wraps once it is wider than the box it labels, but never narrower than this (small icon boxes split into words)
 LABEL_MAX_SHARE = 0.3  # a label is as wide as its text, up to this share of the window; past that it wraps onto more lines (help mode may cover the screen)
 # Boxes that fit a control, not a tile: (left, top, width, height) as fractions of the window. Keyed by the widget.
+# The notes view's own boxes that are not on the same spot as their click: the FILTERS button (upper right, shows once a row is clicked).
+SHOW_FILTERS_BOX = (0.9131, 0.1041, 0.0748, 0.0445)
 FIT_BOXES: dict[tuple[float, float], tuple[float, float, float, float]] = {
     FILTER_INSTALLED: (0.6988, 0.2473, 0.065, 0.039),  # the Installed pill
-    # The course notes panel: the X, the Read More button, the scores icon and the big Play button.
+    # The notes view's details: the X, the Read More button, the scores icon and the big Play button.
     PANEL_CLOSE: (0.945, 0.165, 0.032, 0.07),
     READ_MORE: (0.9034, 0.612, 0.0655, 0.044),
-    ROUND_HISTORY: (0.955, 0.745, 0.03, 0.04),
-    PANEL_PLAY: (0.6927, 0.8495, 0.2817, 0.0374),
+    ROUND_HISTORY: (0.960, 0.748, 0.016, 0.025),  # the clipboard icon only (was 0.03 x 0.04, too big on the right and bottom)
+    PANEL_PLAY: (0.6927, 0.8455, 0.2817, 0.044),  # the Play button: the top is right now; the bottom needs to go lower
     HISTORY_CLOSE: (0.648, 0.235, 0.026, 0.045),  # the X on the round history dialog
     ROUND_PLAY: (0.7955, 0.927, 0.176, 0.055),  # the big PLAY on round settings, bottom right
     PREFERENCES_CHEVRON: (0.3045, 0.0375, 0.0195, 0.036),  # just the chevron of the driving range panel
@@ -141,7 +147,7 @@ FIT_BOXES: dict[tuple[float, float], tuple[float, float, float, float]] = {
 BOX_ONLY: dict[str, tuple[float, float, float, float]] = {
     "change driving range distance": (0.168, 0.03, 0.129, 0.06),  # the Driving Range Distance box, ending just past the slider
     "change wind": (0.49, 0.0, 0.075, 0.045),  # the wind arrow and speed at the top, as wide as that widget
-    f"{TOGGLE} hand": (0.013, 0.915, 0.066, 0.075),  # the RIGHT HAND button, lower left
+    f"toggle hand": (0.013, 0.915, 0.066, 0.075),  # the RIGHT HAND button, lower left
 }
 # The chevron that closes the open driving range panel (top right of the panel).
 CLOSE_PREFERENCES_BOX = (0.2883, 0.104, 0.0195, 0.036)
@@ -182,7 +188,7 @@ BOX_CLICKS: dict[str, str] = {"play course": "now"}
 WIDGET_OF: dict[tuple[float, float], tuple[float, float]] = {CLEAR_SEARCH_CLICK: SEARCH_BOX}
 
 _ROW_PHRASE = re.compile(r"^(play|download) row (\w+)$")  # "now" variants are chains, so they get no label of their own
-_FAVORITE_PHRASE = re.compile(rf"^{TOGGLE} favorite row (\w+)$")
+_FAVORITE_PHRASE = re.compile(rf"^toggle favorite row (\w+)$")
 _NOTES_PHRASE = re.compile(r"^show notes (\w+)$")
 
 
@@ -192,12 +198,6 @@ def _box(widget: tuple[float, float]) -> tuple[float, float, float, float]:
         return FIT_BOXES[widget]
     width, height = CARD_SIZE if widget in CARDS else BUTTON_SIZE  # every tile box is the same size
     return widget[0] - width / 2, widget[1] - height / 2, width, height
-
-
-def _row_box(centre_x: float, word: str, width: float) -> tuple[tuple, tuple[float, float, float, float]]:
-    number = DOWNLOAD_WORDS.index(word)  # 0 for row one
-    centre_y = FIRST_ROW_Y + number * ROW_STEP
-    return (centre_x, centre_y), (centre_x - width / 2, centre_y - ROW_HALF_HEIGHT, width, 2 * ROW_HALF_HEIGHT)
 
 
 def _course_label(phrase: str) -> str:
@@ -211,38 +211,48 @@ def _chooser_widget(phrase: str) -> tuple[tuple, tuple[float, float, float, floa
     if phrase == f"use filter":
         return SEARCH_BOX, FIT_BOXES[SEARCH_BOX]
     match = _ROW_PHRASE.match(phrase)
-    if match and match.group(2) in DOWNLOAD_WORDS:
+    if match and match.group(2) in COURSE_LIST.rows:
         kind, word = match.group(1), match.group(2)
         # Only the button the row shows is offered: Play on an installed course, Download on one not yet installed.
-        if row_state(DOWNLOAD_WORDS.index(word) + 1) != ("play" if kind == "play" else "download"):
+        if row_state(COURSE_LIST.number(word)) != ("play" if kind == "play" else "download"):
             return None
-        return _row_box(ROW_BUTTON_CENTRE_X, word, ROW_BUTTON_WIDTH)
+        return COURSE_LIST.box("button", word)
     match = _FAVORITE_PHRASE.match(phrase)
-    if match and match.group(1) in DOWNLOAD_WORDS:
+    if match and match.group(1) in COURSE_LIST.rows:
         # The favourite heart is only offered on an installed course's row.
-        if row_state(DOWNLOAD_WORDS.index(match.group(1)) + 1) != "play":
+        if row_state(COURSE_LIST.number(match.group(1))) != "play":
             return None
-        return _row_box(FAVORITE_X, match.group(1), ICON_WIDTH)
+        return COURSE_LIST.box("favorite", match.group(1))
     match = _NOTES_PHRASE.match(phrase)
-    if match and match.group(1) in DOWNLOAD_WORDS:
-        if row_state(DOWNLOAD_WORDS.index(match.group(1)) + 1) is None:
+    if match and match.group(1) in COURSE_LIST.rows:
+        if row_state(COURSE_LIST.number(match.group(1))) is None:
             return None  # an empty row has no notes
-        return _row_box(NOTES_X, match.group(1), ICON_WIDTH)
+        return COURSE_LIST.box("notes", match.group(1))
     return None
 
 
-def _notes_panel_targets() -> list[tuple[str, tuple[float, float, float, float]]]:
-    """While the course notes panel is up it is the only thing that listens, so only its boxes are shown."""
-    state = panel_state()
-    if state == "description":
+def _notes_view_targets() -> list[tuple[str, tuple[float, float, float, float]]]:
+    """The notes view's details: its own boxes. A dialog on top (read more, latest scores) is the only thing boxed while it is up."""
+    dialog = dialog_state()
+    if dialog == "read_more":
         return [("close", _box(DESCRIPTION_CLOSE))]
-    if state == "history":
+    if dialog == "latest_scores":
         return [("cancel", _box(HISTORY_CLOSE))]
     return [
-        ("cancel", _box(PANEL_CLOSE)),
+        *([("cancel", _box(PANEL_CLOSE))] if notes_view_has_cancel() else []),  # additional driving ranges has no X
         *([("read more", _box(READ_MORE))] if read_more_present() else []),  # a course with no Read More has no button
         ("latest scores", _box(ROUND_HISTORY)),
         ("play course (now)", _box(PANEL_PLAY)),
+        ("show filters", SHOW_FILTERS_BOX),  # the FILTERS button is there with the details open too
+    ]
+
+
+def _notes_preview_targets() -> list[tuple[str, tuple[float, float, float, float]]]:
+    """The notes view on the right with no details open: its own Play and clipboard, and the FILTERS button."""
+    return [
+        ("play course (now)", _box(PANEL_PLAY)),
+        ("latest scores", _box(ROUND_HISTORY)),  # the clipboard icon: opens a dialog with only a cancel
+        ("show filters", SHOW_FILTERS_BOX),
     ]
 
 
@@ -255,11 +265,50 @@ def _shown_now(phrase: str) -> bool:
     return True
 
 
+def _filter_phrase(phrase: str) -> bool:
+    return phrase.startswith("filter ") or phrase in ("use filter", "clear filter")
+
+
+def _wrong_mode(phrase: str, key: str | None) -> bool:
+    """On the course list, the view read at entry decides. The filter pills are only on the filter view, so they are
+    only boxed in filter mode. Everything else (the rows, the notes icons) is boxed in both modes. The notes view
+    takes the same space as the filter view, so while it is up the filter boxes are not shown."""
+    if key not in COURSE_LIST_SCREENS:
+        return False
+    if current_view() == NOTES_VIEW:
+        return _filter_phrase(phrase)
+    if list_mode() != "notes":
+        return False
+    return _filter_phrase(phrase)
+
+
+def _filter_view_targets() -> list[tuple[str, tuple[float, float, float, float]]]:
+    """The filter view's four pills. Its words add to the screen, like the notes view's."""
+    return [
+        ("filter installed", _box(FILTER_INSTALLED)),
+        ("filter all", _box(FILTER_ALL)),
+        ("filter trending", _box(FILTER_TRENDING)),
+        ("filter favorites", _box(FILTER_FAVORITES)),
+    ]
+
+
 def targets(key: str | None) -> list[tuple[str, tuple[float, float, float, float]]]:
-    """(label, box) for each widget the screen has a command for. The label is the phrases for that widget, joined
-    with " | ". A chain, or a sequence that is more than one click, gets no box."""
-    if panel_open():
-        return _notes_panel_targets()
+    """(label, box) for each widget the screen has a command for. The notes and filter views add their boxes to the
+    screen's. A dialog on the notes view (read more, latest scores) is the only thing boxed while it is up."""
+    if text_entry.active() and key in COURSE_LIST_SCREENS:
+        return [("end filter", FIT_BOXES[SEARCH_BOX])]  # the filter is typing: it locks out the rest of the screen
+    view = current_view()
+    if view == NOTES_VIEW:
+        if dialog_state():
+            return _notes_view_targets()  # a dialog: only its own close is boxed
+        return [*_notes_view_targets(), *_screen_targets(key)]
+    if view == FILTER_VIEW:
+        return [*_filter_view_targets(), *_screen_targets(key)]
+    return _screen_targets(key)
+
+
+def _screen_targets(key: str | None) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """The screen's own boxes. The label is the phrases for that widget, joined with " | "."""
     if current_panel() == "driving_preferences_panel":
         return _prefs_panel_targets()  # the open panel is its own screen: only its help
     if current_panel() == "end_round_confirm":
@@ -287,6 +336,8 @@ def targets(key: str | None) -> list[tuple[str, tuple[float, float, float, float
     for phrase, sequence in candidates:
         if phrase in gathered:
             continue
+        if _wrong_mode(phrase, key):
+            continue
         if phrase in BOX_ONLY:
             boxes.setdefault(("only", phrase), (BOX_ONLY[phrase], []))[1].append(phrase)
             continue
@@ -310,8 +361,11 @@ def targets(key: str | None) -> list[tuple[str, tuple[float, float, float, float
     # "use" and "play" come first: "use filter | clear filter", "play row one | download row one"
     # "play row N" is the shortcut-able one: "(now)" marks the word as optional, as on the round settings help
     labelled = [[f"{phrase} (now)" if phrase.startswith("play row ") else phrase for phrase in labels] for labels in (labels for _, labels in boxes.values())]
-    return [(" | ".join(sorted(words, key=lambda phrase: not phrase.startswith(("play", "use")))), box)
-            for (box, _), words in zip(boxes.values(), labelled)]
+    result = [(" | ".join(sorted(words, key=lambda phrase: not phrase.startswith(("play", "use")))), box)
+              for (box, _), words in zip(boxes.values(), labelled)]
+    if key in COURSE_LIST_SCREENS and list_mode() == "notes" and current_view() != NOTES_VIEW:
+        result.extend(_notes_preview_targets())  # the notes view on the right, with no details open
+    return result
 
 
 CONTINUATION = "  "  # two spaces at the start of a wrapped line, so it reads as part of the command above
@@ -339,7 +393,7 @@ CLUB_LIST_LEFT = 0.01  # the club list sits at bottom left, above the club tile
 CLUB_LIST_TOP = 0.50
 CLUB_LIST_BOTTOM = 0.92  # the list's red box runs down over the driver icon, the club tile at bottom left
 # Commands gathered into one black label next to the game menu button, not boxed one by one on the screen.
-SCREEN_CMDS = ("look left", "look right", f"{TOGGLE} ui", f"{TOGGLE} pin", "reset aim", f"{TOGGLE} heat map", f"{TOGGLE} green grid")  # end round is on the show game menu box
+SCREEN_CMDS = ("look left", "look right", f"toggle ui", f"toggle pin", "reset aim", f"toggle heat map", f"toggle green grid")  # end round is on the show game menu box
 # How a command reads in the list where it differs: a look is ended by saying stop once it is where you want it.
 SCREEN_CMDS_TEXT: dict[str, str] = {"look left": "look left → stop", "look right": "look right → stop"}
 # How a command reads on its label where it differs from the phrase. "→ stop" says to say stop once a drag is where
@@ -351,9 +405,9 @@ LABEL_EXTRAS: dict[str, str] = {
     "change max distance": "change max distance → stop | slide left|right → stop",
     "change min distance": "change min distance → stop | slide left|right → stop",
     "end round": "<end round>",
-    "begin gspro practice range now": "<begin gspro practice range now>",
-    "begin on course practice now": "<begin on course practice now>",
-    "begin additional ranges now": "<begin additional ranges now>",
+    "skip to gspro practice range": "<skip to gspro practice range>",
+    "skip to on course practice": "<skip to on course practice>",
+    "skip to additional ranges": "<skip to additional ranges>",
 }
 SCREEN_CMDS_TOP = 0.009  # the top of the screen cmds, at the top right
 SCREEN_CMDS_RIGHT = 0.83  # the right edge of the set: just left of the Practice Range header, with a buffer; longer lines grow to the left
@@ -447,14 +501,14 @@ class _Boxes(QWidget):
         painter = QPainter(self)
         width, height = self.width(), self.height()
         font = QFont()
-        font.setPointSize(14)
+        font.setPointSize(FONT_POINTS)
         font.setBold(True)
         painter.setFont(font)
         for label, (left, top, box_w, box_h) in targets(current_screen()):
             if label == "show game menu":
                 label = "show game menu | end round"  # end round is opened from the same button, so it reads with it
             if label == "begin practice":
-                label += " | begin gspro practice range now | begin on course practice now | begin additional ranges now"
+                label += " | skip to gspro practice range | skip to on course practice | skip to additional ranges"
             label = " | ".join(LABEL_EXTRAS.get(part, part) for part in label.split(" | "))
             x0, y0 = int(left * width), int(top * height)
             x1, y1 = int((left + box_w) * width), int((top + box_h) * height)
@@ -500,7 +554,7 @@ def _place() -> bool:
     return True
 
 
-_shown = False  # the boxes are on the screen: what "toggle help" must go by, not the listener's own flag
+_shown = False  # the boxes are on the screen: what "toggle overlay" must go by, not the listener's own flag
 _missed = 0  # refreshes in a row that did not find GSPro
 MISSED_LIMIT = 3  # a brief miss (GSPro changing window) does not drop the help; this many in a row does
 

@@ -29,15 +29,18 @@ from PySide6.QtWidgets import (
 )
 
 from app.commands import DIGIT_KEYS, ROWS, aliases_of, primary, shown
-from app.gspro_sequences import current_panel, current_screen
+from app.gspro_sequences import current_panel, current_screen, current_view
 from app.window_places import COMMANDS_KEY, remember, restore
 from app.gspro_screens import (
     GLOBAL,
     recognizer_setup,
     GROUPS,
-    PANEL_NAMES,
     PANEL_PARENTS,
     PANELS,
+    VIEW_PARENTS,
+    VIEWS,
+    overlay_name,
+    overlay_phrases,
     RECORDS_BY_KEY,
     SCREEN_RECORDS,
     check,
@@ -60,13 +63,16 @@ LEVEL_GAP = 120  # down, between levels
 _BRANCH_STYLE = "QPushButton { background: #9e9e9e; color: white; border-radius: 16px; font-weight: bold; }"
 _LEAF_STYLE = "QPushButton { background: #7cb342; color: white; border-radius: 6px; font-weight: bold; }"
 _PANEL_STYLE = "QPushButton { background: #1e88e5; color: white; border-radius: 6px; font-weight: bold; }"
+_VIEW_STYLE = "QPushButton { background: #8e24aa; color: white; border-radius: 6px; font-weight: bold; }"
 
 
 def _base_style(key: str) -> str:
-    """Grey: a screen with boxes under it. Green: a screen at the end of its branch. Blue: a panel."""
+    """Grey: a screen with boxes under it. Green: a screen at the end of its branch. Blue: a panel. Purple: a view."""
     if key in PANELS:
         return _PANEL_STYLE
-    screens_below = [child for child in _children(key) if child not in PANELS]  # panels do not count
+    if key in VIEWS:
+        return _VIEW_STYLE
+    screens_below = [child for child in _children(key) if child not in PANELS and child not in VIEWS]  # panels and views do not count
     return _BRANCH_STYLE if screens_below else _LEAF_STYLE
 
 
@@ -138,11 +144,12 @@ def _table_page() -> QWidget:
     return page
 
 
-# Every tree box: screens, and panels (a panel is a box under the screen it opens on).
+# Every tree box: screens, panels and views (a panel or view is a box under the screen it opens on).
 # Each entry is key -> (name, note, parent).
 _NODES: dict[str, tuple[str, str, str | None]] = {
     **{record.key: (record.name, record.note, record.parent) for record in SCREEN_RECORDS},
-    **{key: (PANEL_NAMES[key], "panel", PANEL_PARENTS[key]) for key in PANELS},
+    **{key: (overlay_name(key), "panel", PANEL_PARENTS[key]) for key in PANELS},
+    **{key: (overlay_name(key), "view", VIEW_PARENTS[key]) for key in VIEWS},
 }
 
 
@@ -150,11 +157,11 @@ def _children(key: str) -> list[str]:
     return [child for child, (_name, _note, parent) in _NODES.items() if parent == key]
 
 
-def _panel_commands(key: str) -> list[tuple[str, str, str, bool]]:
-    """The commands a panel's grammar holds, in the same shape as _commands_for."""
+def _overlay_commands(key: str) -> list[tuple[str, str, str, bool]]:
+    """The commands a panel's or view's grammar holds, in the same shape as _commands_for."""
     rows: list[tuple[str, str, str, bool]] = []
     digits_listed = False
-    for phrase in PANELS[key]:
+    for phrase in overlay_phrases(key):
         if phrase in DIGIT_KEYS:
             if digits_listed:
                 continue
@@ -236,10 +243,10 @@ def phrase_rows(phrases, default_text: str) -> list[tuple[str, str, str, bool]]:
 
 
 def current_rows() -> tuple[str, list[tuple[str, str, str, bool]]]:
-    """What is listening right now: the open panel's commands, else the screen's, else nothing."""
-    panel = current_panel()
+    """What is listening right now: the open panel's or view's commands, else the screen's, else nothing."""
+    panel = current_panel() or current_view()
     if panel:
-        return PANEL_NAMES.get(panel, panel), _panel_commands(panel)
+        return overlay_name(panel), _overlay_commands(panel)
     key = current_screen()
     if key in RECORDS_BY_KEY:
         return RECORDS_BY_KEY[key].name, _commands_for(key)
@@ -344,10 +351,11 @@ def _tree_page() -> QWidget:
 
     def show(key: str) -> None:
         highlight(key)
-        is_panel = key in PANELS
-        rows = _panel_commands(key) if is_panel else _commands_for(key)
+        is_overlay = key in PANELS or key in VIEWS
+        rows = _overlay_commands(key) if is_overlay else _commands_for(key)
         name = _NODES[key][0]
-        commands_title.setText(f"{'Panel' if is_panel else 'Commands on'} {name} ({len(rows)})")
+        kind = "Panel" if key in PANELS else "View" if key in VIEWS else "Commands on"
+        commands_title.setText(f"{kind} {name} ({len(rows)})")
         commands.setRowCount(len(rows))
         for row, (phrase, also, detail, wired) in enumerate(rows):
             commands.setItem(row, 0, QTableWidgetItem(phrase))
@@ -405,8 +413,8 @@ def _tree_page() -> QWidget:
     last_seen: dict[str, str | None] = {"screen": None}
 
     def follow() -> None:
-        # An open panel comes first: its box and commands show until it closes.
-        target = current_panel() or current_screen()
+        # An open panel or view comes first: its box and commands show until it closes.
+        target = current_panel() or current_view() or current_screen()
         if target == last_seen["screen"] or target not in _NODES:
             return
         last_seen["screen"] = target
@@ -431,8 +439,10 @@ def build_screen_table(parent: QWidget | None = None) -> QMainWindow:
     tabs.addTab(_table_page(), "Table")
     tabs.addTab(_tree_page(), "Tree")
     from app.commands_page import build_active_page  # imported here: commands_page imports this module
+    from app.overlap_page import build_overlap_page  # imported here, like build_active_page
 
     tabs.addTab(build_active_page(), "Active commands")
+    tabs.addTab(build_overlap_page(), "Analyze overlap")
     tabs.setCurrentIndex(2)  # Active commands opens first: it shows what is listening now
     layout.addWidget(tabs, stretch=1)
 

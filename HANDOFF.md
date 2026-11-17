@@ -75,9 +75,9 @@ Do not send a test shot into a live round. The socket is shot data in, and repli
 - `app/players.py` / `app/player_dialog.py` — local players and bags
 - `app/gspro_bag.py` / `app/gspro_bag_dialog.py` — locker bags and shortcut edit
 - `app/focus.py` — one focus before keys
-- `app/connector_ui.py` — after "gspro start" starts the apps, clicks SQG-GSPRO-Connect's Scan and Connect (LM) and Connect (GSPro) in the background. It has no accessibility tree or native controls, so it clicks at fixed fractions of the window, and it reads the status lights from screen pixels. It clicks a button only when its light is not green. Layout positions are in the constants at the top. If the window layout changes, these need updating
+- `app/connector_ui.py` — after "start application" starts the apps, clicks SQG-GSPRO-Connect's Scan and Connect (LM) and Connect (GSPro) in the background. It has no accessibility tree or native controls, so it clicks at fixed fractions of the window, and it reads the status lights from screen pixels. It clicks a button only when its light is not green. Layout positions are in the constants at the top. If the window layout changes, these need updating
 - `app/overview_page.py` — first page in the list, opened at startup, for the OBS floor display. Three circles: launch monitor connected, GSPro connected (both from the connector's status lights), connector running (process check). Shows the last command and last heard phrase. Voice commands also run on this page
-- `app/launch.py` — "gspro start" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
+- `app/launch.py` — "start application" starts GSPro (`C:\golfsim\GSProV1\Core\GSPv4\GSpro.exe`, working folder `C:\golfsim\GSProV1`) if its window is not open. Does not send keys
 - `app/main_window.py` — player, bag summary, status bar, buttons
 - `resources/gspro_clubs.json` — GSPro club enum
 - `ditch-your-keyboard.spec` — PyInstaller datas: `ui/`, `resources/`
@@ -105,6 +105,17 @@ Do not send a test shot into a live round. The socket is shot data in, and repli
 - Positions are fractions of the target window (`connector_ui.py`, `gspro_ui.py`). Check the log's rect and point against the screen when a click misses.
 - Timing is a hover pause (0.3 s), press, and hold (0.15 s), then release. Change it in `clicks.py` if a screen needs it.
 - To debug a miss: send the `click` and `gspro menu` lines, plus a screenshot from the moment of the click.
+
+## Additional driving ranges screen (open notes, 2026-11-16)
+
+- Help shows on rows with no course (rows 4-9 in the 11:54 screenshot). Cause: row state (`ROW_STATE` in `app/course_chooser.py`) is read only on arrival at the list, on "toggle overlay", and on "refresh overlay". When the list changes without one of those, the boxes use old state. Log check: a scan at 11:48 read all nine rows as play; the next scan was at 11:56, when rows 4-9 were empty. Workaround: say "refresh overlay". Fix options are open: re-read rows whenever the list changes, or re-read them on each help refresh.
+- The screen opens in notes mode, not filter mode. Clicking a second row (a default-background area or the notes icon) shows a FILTERS button at the upper right. Clicking FILTERS opens the filter panel. After that, any row click goes back to the notes panel, and the FILTERS button stays.
+- Suspected GSPro bug, not ours. Not yet confirmed.
+- Impact on us: "filter installed / all / trending / favorites" only work in filter mode, and there is no voice command for the FILTERS button yet. "show notes N" presumably needs notes mode (not verified).
+- Screen: `app/gspro_tree.py` ("additional"). Screenshot: `docs/screens/additional_driving_ranges_screen.png`.
+- Planned: "show filters" switches from the notes view to the filter panel by clicking the FILTERS button (upper right). Not built yet.
+- Overlay mode is seeded from the big notes Play button (`NOTES_PLAY` in `app/course_chooser.py`): blue means notes, background means filter. The overlay shows notes boxes or filter boxes to match.
+- Open: the notes view on the right (big Play, collection and delete icons) has no overlay boxes yet.
 
 ## Left alone on purpose
 
