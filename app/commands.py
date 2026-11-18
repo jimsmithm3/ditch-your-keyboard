@@ -3,7 +3,9 @@
 Windows speech listens for these phrases, so each one must be a phrase it can recognise.
 """
 
-from app.gspro_tree import SYNC_PHRASES
+from collections import Counter
+
+from app.gspro_tree import SYNC_PHRASES, screen
 
 WAKE_PHRASES = ("hey caddie", "hey caddy")
 LAUNCH_PHRASE = f"start application"  # starts GSPro if it is not running; handled in listener.py, not sent as keys
@@ -26,6 +28,7 @@ class Command:
         hold: bool = False,
         closes: bool = False,
         stops: bool = False,
+        continues: bool = True,  # a repeat command also hears "<phrase> repeat" (until stop); False: numbers only
     ) -> None:
         self.phrases = phrases
         self.keys = keys
@@ -35,6 +38,7 @@ class Command:
         self.heard = heard
         self.repeat = repeat
         self.hold = hold
+        self.continues = continues
         self.closes = closes
         self.stops = stops
 
@@ -93,11 +97,23 @@ ROWS: tuple[Command, ...] = (
     Command(("change driving range distance", "change range distance"), "", "On the practice range, press the left end of the top slider and move right until stop", area="Range"),
     Command(("done",), "", "In the driving range panel, press Enter in the distance box (keeps the typed number)", area="Range"),
     Command(("toggle overlay",), "", "Show a red box over each button on this GSPro screen, or hide the boxes", area="Overlay"),
-    Command(("overlay red",), "", "Overlay look: the red boxes (the default)", area="Overlay"),
-    Command(("overlay blue",), "", "Overlay look: the gentle blue boxes", area="Overlay"),
+    Command(("toggle labels",), "", "Debug: hide or show the text on the overlay boxes. The boxes stay either way", area="Overlay"),
+    Command(("overlay preferences",),"", "Open the overlay preferences: the look (red, blue or grey) and the label size, with the overlay still up. Say close to finish", area="Overlay"),
+    Command(("sync help",), "", "Show the screens you can sync to, by name. Say a name to sync to it, or cancel to close", area="Overlay"),
+    Command(("map close",), "", "Close the mini map, from its right chevron (large or small)", area="Map"),
+    Command(("map open",), "", "Open a closed mini map, from its bottom chevron. It comes back the size it was", area="Map"),
+    Command(("map larger",), "", "Make a small mini map larger, with the two arrows", area="Map"),
+    Command(("map smaller",), "", "Make a large mini map smaller, with the two arrows", area="Map"),
+    Command(("toggle lights",), "", "On the additional ranges that have it: tick or untick Lights", area="Range"),
+    Command(("toggle targets",), "", "On the additional ranges that have it: tick or untick Targets", area="Range"),
+    Command(("red",), "", "In overlay preferences: the red boxes", area="Overlay"),
+    Command(("blue",), "", "In overlay preferences: the gentle blue boxes (the default)", area="Overlay"),
+    Command(("grey",), "", "In overlay preferences: the grey boxes, on a half-grey background", area="Overlay"),
+    Command(("master",), "", "In overlay preferences: the overlay is off when the app starts (the default)", area="Overlay"),
+    Command(("newbie",), "", "In overlay preferences: the overlay is on when the app starts", area="Overlay"),
     Command(("overlay refresh",), "", "Read the course rows again and redraw the overlay boxes (after the list changes)", area="Overlay"),
-    Command(("overlay larger",), "", "Make the overlay labels one point bigger, then read the course rows again", area="Overlay"),
-    Command(("overlay smaller",), "", "Make the overlay labels one point smaller", area="Overlay"),
+    Command(("larger",), "", "In overlay preferences: the overlay labels one point bigger", area="Overlay"),
+    Command(("smaller",), "", "In overlay preferences: the overlay labels one point smaller", area="Overlay"),
     Command(("place ball",), "", "Click the ball icon, then pick a point on the grid to place the ball", area="Ball"),
     Command(("place pin",), "", "Hold Shift and click the icon (it turns into a flag), then pick a point on the grid to place the pin", area="Ball"),
     Command(("alpha",), "", "Grid: cell A (column or row)", area="Grid"),
@@ -126,7 +142,6 @@ ROWS: tuple[Command, ...] = (
     Command(("xray",), "", "Grid: cell X (column or row)", area="Grid"),
     Command(("yankee",), "", "Grid: cell Y (column or row)", area="Grid"),
     Command(("zulu",), "", "Grid: cell Z (column or row)", area="Grid"),
-    Command(("hide place",), "", "Hide the numbered grid", area="Place"),
     Command(("cancel place",), "", "Close the grid and click the ball icon again, which undoes the placement", area="Place"),
     Command(("redo",), "", "Place: take back the last letter. Say it again to go back one more", area="Place"),
     Command(("toggle map",), "", "Place: press S to change the mini map's size, without changing the app's flag (then sync map small or large if needed)", area="Place"),
@@ -239,13 +254,16 @@ ROWS: tuple[Command, ...] = (
     Command(("club up",), "i", "Next club toward the putter", area="Club"),
     Command(("club down",), "k", "Next club toward the driver", area="Club"),
     Command(("club putter",), "u", "Jump to the putter", area="Club", heard=False),
-    Command(("zoom in",), "q", "Zoom in", area="Map", repeat=True, hold=True),
-    Command(("zoom out",), "w", "Zoom out", area="Map", repeat=True, hold=True),
+    # One press, a number ("zoom in five"), or "zoom in repeat": pressed again every 0.12 s until stop (listener.py).
+    Command(("zoom in",), "q", "Zoom in", area="Map", repeat=True),
+    Command(("zoom out",), "w", "Zoom out", area="Map", repeat=True),
     Command((f"toggle map", "mini map", "shrink map"), "s", "Toggle the mini map (S): expand or shrink", area="Map"),
     Command(("sync map small",), "", "Tell the app the mini map is small (no keys, no clicks)", area="Map"),
     Command(("sync map large",), "", "Tell the app the mini map is large (no keys, no clicks)", area="Map"),
     Command((f"toggle free flight", f"toggle flight"), "", "On the course screen, turn free flight on (F5), or off again (F5)", area="Map"),
     Command(("place marker",), "", "On the course screen, drop a marker at the center of the mini map, or where the moved marker is", area="Map"),
+    # Heard only while the marker panel is up (see MARKER_CMDS). A left click where the cursor is drops the marker.
+    Command(("set marker",), "", "While placing a marker: a left click where the cursor is drops it, and the map goes back", area="Map"),
     Command(("left",), "", "Marker panel: move the marker left until stop", area="Marker"),
     Command(("right",), "", "Marker panel: move the marker right until stop", area="Marker"),
     Command(("up",), "", "Marker panel: move the marker up until stop", area="Marker"),
@@ -254,7 +272,7 @@ ROWS: tuple[Command, ...] = (
     *(Command((word,), "", f"Hole panel: click hole {number} (the cancel closes the panel)", area="Hole")
       for number, word in ((10, "ten"), (11, "eleven"), (12, "twelve"), (13, "thirteen"), (14, "fourteen"),
                            (15, "fifteen"), (16, "sixteen"), (17, "seventeen"), (18, "eighteen"))),
-    Command(("cancel marker",), "", "Marker panel: let go of the button where the marker is, make the map small again if place marker made it large, and leave the panel", area="Marker"),
+    Command(("cancel marker",), "", "Marker panel: let go of the button where the marker is, put the map back to the size it was before place marker, and leave the panel", area="Marker"),
     Command(("fly over",), "o", "Flyover", area="View", closes=True, stops=True),
     Command((f"toggle heat map",), "y", "Toggle the heat map", area="View"),
     Command((f"toggle scorecard",), "t", "Toggle the scorecard", area="View"),
@@ -293,17 +311,20 @@ ROWS: tuple[Command, ...] = (
     Command(("console tall",), "f9", "Tall console", area="Visual / System", wired=False),
 )
 
-# "sync to <screen>" rows: set the app's screen when it has drifted out of sync with GSPro.
-# Each sync phrase has a secondary without the word "screen" at the end, and some have extra secondaries.
+# "sync to <name>" rows: set the app's screen when it has drifted out of sync with GSPro.
+# Each sync phrase has a secondary without its last word (screen or chooser), and some have extra secondaries.
 _EXTRA_SYNC_ALIASES: dict[str, tuple[str, ...]] = {
-    "sync to gspro practice range screen": ("sync to practice range", "sync to gspro range"),
-    "sync to course practice screen": ("sync to practice course",),
+    "sync to gspro practice range": ("sync to practice range", "sync to gspro range"),
 }
+# The short form drops the last word. It is only added when no other sync phrase or alias uses it: two would be heard as
+# one command, so an ambiguous short form is left out until it is decided.
+_SHORT_SYNC = {phrase: phrase.rsplit(" ", 1)[0] for phrase in SYNC_PHRASES}
+_SYNC_NAMES = Counter([*SYNC_PHRASES, *_SHORT_SYNC.values(), *(a for names in _EXTRA_SYNC_ALIASES.values() for a in names)])
 _SYNC_ROWS = tuple(
     Command(
-        (phrase, phrase.removesuffix(" screen"), *_EXTRA_SYNC_ALIASES.get(phrase, ())),
+        (phrase, *([_SHORT_SYNC[phrase]] if _SYNC_NAMES[_SHORT_SYNC[phrase]] == 1 else []), *_EXTRA_SYNC_ALIASES.get(phrase, ())),
         "",
-        f"Tell the app GSPro is on the {SYNC_PHRASES[phrase]} screen (no clicks)",
+        f"Tell the app GSPro is on {screen(SYNC_PHRASES[phrase]).name} (no clicks)",
         area="Launch",
     )
     for phrase in SYNC_PHRASES
@@ -323,15 +344,20 @@ _NUMBER_WORDS = (
     "ten",
 )
 _COUNT = {word: number for number, word in enumerate(_NUMBER_WORDS, start=1)}
+REPEAT_WORD = "a lot"  # says a repeat command on until stop: "zoom in a lot", "aim left a lot"
 
 
 def repeat_variants(phrase: str) -> tuple[str, ...]:
-    """The numbered and continue forms of a repeat command, such as "zoom in five" or "zoom in continue".
+    """The numbered and repeat forms of a repeat command, such as "zoom in five" or "zoom in repeat".
     Empty for any other phrase. The grammar listens for these; they are not shown in the tables."""
     for row in ROWS:
         if row.repeat and phrase in row.phrases:
-            return tuple(f"{phrase} {word}" for word in (*_NUMBER_WORDS, "continue"))
+            return tuple(f"{phrase} {word}" for word in _repeat_words(row))
     return ()
+
+
+def _repeat_words(row: Command) -> tuple[str, ...]:
+    return (*_NUMBER_WORDS, REPEAT_WORD) if row.continues else _NUMBER_WORDS
 
 
 def _heard_phrases(row: Command) -> tuple[str, ...]:
@@ -340,7 +366,7 @@ def _heard_phrases(row: Command) -> tuple[str, ...]:
     return tuple(
         phrase if not word else f"{phrase} {word}"
         for phrase in row.phrases
-        for word in ("", *_NUMBER_WORDS, "continue")
+        for word in ("", *_repeat_words(row))
     )
 
 
@@ -458,16 +484,16 @@ def voice_text(command: Command) -> str:
         return " / ".join(f"{phrase} (until stop)" for phrase in command.phrases)
     if not command.repeat:
         return " / ".join(command.phrases)
-    return " / ".join(f"{phrase} (one to ten, or continue)" for phrase in command.phrases)
+    return " / ".join(f"{phrase} (one to ten, or {REPEAT_WORD})" for phrase in command.phrases)
 
 
 def is_continue(phrase: str) -> bool:
     """True when the phrase should keep going until stop."""
     for row in ROWS:
-        if not row.repeat or not row.wired:
+        if not row.repeat or not row.wired or not row.continues:
             continue
         for base in row.phrases:
-            if phrase == f"{base} continue":
+            if phrase == f"{base} {REPEAT_WORD}":
                 return True
     return False
 
@@ -479,7 +505,7 @@ def holds_key(phrase: str) -> bool:
             continue
         if row.repeat:
             for base in row.phrases:
-                if phrase == f"{base} continue":
+                if phrase == f"{base} {REPEAT_WORD}":
                     return True
         elif phrase in row.phrases:
             return True

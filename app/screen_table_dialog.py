@@ -153,8 +153,9 @@ _NODES: dict[str, tuple[str, str, str | None]] = {
 }
 
 
-def _children(key: str) -> list[str]:
-    return [child for child, (_name, _note, parent) in _NODES.items() if parent == key]
+def _children(key: str, nodes: dict[str, tuple[str, str, str | None]] | None = None) -> list[str]:
+    nodes = _NODES if nodes is None else nodes
+    return [child for child, (_name, _note, parent) in nodes.items() if parent == key]
 
 
 def _overlay_commands(key: str) -> list[tuple[str, str, str, bool]]:
@@ -309,17 +310,67 @@ def fill_table(table: QTableWidget, rows: list[tuple[str, str, str, bool]]) -> N
     table.resizeRowsToContents()
 
 
-def _place(key: str, depth: int, leaf_count: list[int], positions: dict[str, tuple[float, float]]) -> float:
+def _place(
+    key: str,
+    depth: int,
+    leaf_count: list[int],
+    positions: dict[str, tuple[float, float]],
+    nodes: dict[str, tuple[str, str, str | None]] | None = None,
+    leaf_gap: float = LEAF_GAP,
+    level_gap: float = LEVEL_GAP,
+) -> float:
     """Tidy layout: leaves sit side by side in order; each parent centers over its children."""
-    kids = _children(key)
+    kids = _children(key, nodes)
     if not kids:
-        x = leaf_count[0] * LEAF_GAP
+        x = leaf_count[0] * leaf_gap
         leaf_count[0] += 1
     else:
-        xs = [_place(kid, depth + 1, leaf_count, positions) for kid in kids]
+        xs = [_place(kid, depth + 1, leaf_count, positions, nodes, leaf_gap, level_gap) for kid in kids]
         x = (xs[0] + xs[-1]) / 2
-    positions[key] = (x, depth * LEVEL_GAP)
+    positions[key] = (x, depth * level_gap)
     return x
+
+
+def _tree_view(
+    nodes: dict[str, tuple[str, str, str | None]],
+    buttons: dict[str, QPushButton],
+    on_click=None,
+    node_w: int = NODE_W,
+    node_h: int = NODE_H,
+    leaf_gap: float = LEAF_GAP,
+    level_gap: float = LEVEL_GAP,
+) -> QGraphicsView:
+    """The tree diagram: a box per node, joined to its parent. nodes is every box it shows (screens, or screens
+    with panels and views). Each box is added to buttons; on_click(key) runs when a box is clicked. The sizes and
+    gaps default to the commands window's; the sync window passes its own."""
+    positions: dict[str, tuple[float, float]] = {}
+    _place(ROOT.key, 0, [0], positions, nodes, leaf_gap, level_gap)
+
+    view = QGraphicsView()
+    scene = QGraphicsScene(view)  # owned by the view, so it is not freed when this function ends
+    view.setScene(scene)
+    # Connecting lines first, so the boxes sit on top of them.
+    for key, (_name, _note, parent) in nodes.items():
+        if parent is None:
+            continue
+        px, py = positions[parent]
+        cx, cy = positions[key]
+        scene.addLine(px, py + node_h, cx, cy, QPen(QColor("#555555"), 2))
+    for key, (name, note, _parent) in nodes.items():
+        x, y = positions[key]
+        button = QPushButton(f"{name}\n({note})" if note else name)
+        button.setFixedSize(node_w, node_h)
+        button.setStyleSheet(_base_style(key))
+        buttons[key] = button
+        if on_click is not None:
+            button.clicked.connect(lambda _checked=False, key=key: on_click(key))
+        proxy = scene.addWidget(button)
+        proxy.setPos(x - node_w / 2, y)
+
+    view.setRenderHint(QPainter.RenderHint.Antialiasing)
+    view.setMinimumHeight(360)
+    view.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+    return view
 
 
 def _tree_page() -> QWidget:
@@ -369,33 +420,7 @@ def _tree_page() -> QWidget:
             commands.setItem(row, 3, status)
         QTimer.singleShot(0, commands.resizeRowsToContents)
 
-    positions: dict[str, tuple[float, float]] = {}
-    _place(ROOT.key, 0, [0], positions)
-
-    view = QGraphicsView()
-    scene = QGraphicsScene(view)  # owned by the view, so it is not freed when this function ends
-    view.setScene(scene)
-    # Connecting lines first, so the boxes sit on top of them.
-    for key, (_name, _note, parent) in _NODES.items():
-        if parent is None:
-            continue
-        px, py = positions[parent]
-        cx, cy = positions[key]
-        scene.addLine(px, py + NODE_H, cx, cy, QPen(QColor("#555555"), 2))
-    for key, (name, note, _parent) in _NODES.items():
-        x, y = positions[key]
-        button = QPushButton(f"{name}\n({note})" if note else name)
-        button.setFixedSize(NODE_W, NODE_H)
-        button.setStyleSheet(_base_style(key))
-        buttons[key] = button
-        button.clicked.connect(lambda _checked=False, key=key: show(key))
-        proxy = scene.addWidget(button)
-        proxy.setPos(x - NODE_W / 2, y)
-
-    view.setRenderHint(QPainter.RenderHint.Antialiasing)
-    view.setMinimumHeight(360)
-    view.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-    layout.addWidget(view, stretch=1)
+    layout.addWidget(_tree_view(_NODES, buttons, show), stretch=1)
 
     # Bottom of the Tree tab: the commands for the screen you are on, and the always-on commands.
     per_screen = QWidget()
@@ -460,6 +485,98 @@ def build_screen_table(parent: QWidget | None = None) -> QMainWindow:
     close.clicked.connect(window.close)
     layout.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
     return window
+
+
+# The sync help window: the same tree, with only the actual screens (no panels or views).
+SYNC_WINDOW_W, SYNC_WINDOW_H = 1400, 820  # bigger than the commands window, so the tree is read without scrolling
+SYNC_NODE_W, SYNC_NODE_H = 132, 56  # tighter boxes than the commands tree
+SYNC_LEAF_GAP, SYNC_LEVEL_GAP = 150, 100  # the gaps between boxes, across and down
+_SCREEN_NODES: dict[str, tuple[str, str, str | None]] = {
+    record.key: (record.name, record.note, record.parent) for record in SCREEN_RECORDS
+}
+
+
+class _SyncWindow(QMainWindow):
+    """Closing it with its X also closes the sync help, so the app stops listening for screen names."""
+
+    def __init__(self, on_close) -> None:
+        super().__init__()
+        self._on_close = on_close
+        # Stays above GSPro: the app puts GSPro in front when it sends a command, which would otherwise bury this window.
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.setWindowTitle("Sync help: say a screen name to sync to it, or cancel")
+        self.resize(SYNC_WINDOW_W, SYNC_WINDOW_H)
+        from app.gspro_boxes import BOX_COLOUR  # the overlay's box colour, so the X box matches the cancel box on screen
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        top = QHBoxLayout()
+        top.addStretch(1)
+        cancel = QPushButton("X")  # closes the window, and the sync help with it
+        cancel.setFixedSize(36, 30)
+        cancel.setStyleSheet(f"QPushButton {{ border: 3px solid {BOX_COLOUR.name()}; background: white; font-weight: bold; }}")
+        cancel.clicked.connect(self.close)
+        top.addWidget(cancel)
+        layout.addLayout(top)
+        # Tighter boxes and gaps than the commands window, so the whole tree fits without scrollbars.
+        tree = _tree_view(_SCREEN_NODES, {}, None, SYNC_NODE_W, SYNC_NODE_H, SYNC_LEAF_GAP, SYNC_LEVEL_GAP)
+        tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tree.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tree.setMinimumHeight(0)
+        layout.addWidget(tree, stretch=1)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt name)
+        if self._on_close is not None:
+            self._on_close()
+        super().closeEvent(event)
+
+
+_sync_window: _SyncWindow | None = None
+
+
+def _move_to_gspro(window: QMainWindow) -> None:
+    """Put the window just inside GSPro's top left corner, so it opens on GSPro's monitor. Placed in physical pixels
+    with Windows directly, as the grid does (Qt converts positions with each screen's scaling). Does nothing if
+    GSPro is not there."""
+    import ctypes
+
+    from app.connector_ui import client_rect, find_window
+    from app.gspro_ui import GSPRO_TITLE
+
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return
+    left, top, _right, _bottom = client_rect(hwnd)
+    swp_nosize, swp_noactivate, swp_showwindow = 0x0001, 0x0010, 0x0040
+    ctypes.windll.user32.SetWindowPos(
+        int(window.winId()), 0, left + 40, top + 40, 0, 0, swp_nosize | swp_noactivate | swp_showwindow
+    )
+
+
+def _center_on_monitor(window: QMainWindow) -> None:
+    """Centre the window on the monitor it is on (after _move_to_gspro, that is GSPro's monitor)."""
+    screen_geometry = window.screen().availableGeometry()
+    top_left = screen_geometry.center() - window.rect().center()
+    window.move(top_left)
+
+
+def show_sync_tree(on_close=None) -> None:
+    """Open the sync help tree, or bring it to the front. on_close runs when its X closes it."""
+    global _sync_window
+    if _sync_window is None:
+        _sync_window = _SyncWindow(on_close)
+    _sync_window.show()
+    _move_to_gspro(_sync_window)  # after show, so Windows has the window's handle
+    _center_on_monitor(_sync_window)
+    _sync_window.raise_()
+    _sync_window.activateWindow()
+
+
+def hide_sync_tree() -> None:
+    """Close the sync help tree from the app (cancel, or a screen name said). Its X is handled by closeEvent."""
+    if _sync_window is not None:
+        _sync_window.hide()
 
 
 _open: QMainWindow | None = None  # kept so the window is not garbage collected while it is open

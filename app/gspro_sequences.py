@@ -212,6 +212,7 @@ _marker_history: deque[tuple[float, tuple[float, float]]] = deque(maxlen=400)
 MARKER_STOP_LAG_KEY = "marker_stop_lag_seconds"
 MARKER_STOP_LAG_DEFAULT = 1.0
 _marker_mode = False  # after "map mode start": the left button is held down until "map mode end"
+_marker_restore: str | None = None  # the map's size before place marker made it large; put back when the marker is done
 _flight_mode = False  # after "free flight mode start": F5 was pressed to turn free flight on
 
 
@@ -222,7 +223,7 @@ def marker_active() -> bool:
 def marker_move(phrase: str) -> str:
     """Start the marker moving, or change its direction. It keeps moving until marker_stop."""
     global _marker_direction, _marker_thread
-    if _screen not in COURSE_PLAY_SCREENS:
+    if _screen not in MARKER_SCREENS:
         return f"{phrase}: say play screen and now first"
     if not _marker_mode:
         return f"{phrase}: say place marker first"  # the marker moves only while the mouse button is held
@@ -279,12 +280,15 @@ def place_marker() -> str:
     """"place marker": press and hold the button at the mini map's centre, whichever size it is. The map is left as it
     is, so the course keeps updating as the marker moves. Say "place marker" again to drop it."""
     global _marker_mode, _marker_offset, _panel
-    if _screen not in COURSE_PLAY_SCREENS:
+    if _screen not in MARKER_SCREENS:
         return "place marker: say play screen and now first"
     if _marker_mode:
         return "place marker: already held; say place marker again to drop it"
     if _lock.locked():
         return "place marker: wait for the running GSPro sequence to finish"
+    err = ensure_map_large()  # the marker is placed on the large map, so make it large first
+    if err:
+        return f"place marker: {err}"
     _halt_marker()
     hwnd = find_window(GSPRO_TITLE)
     if hwnd is None:
@@ -306,18 +310,52 @@ def place_marker() -> str:
 
 
 def marker_end() -> str:
-    """"place marker" again: drop the marker where it is. The map stays as it is."""
+    """"set marker": a left click where the cursor is drops the marker, then the map goes back to the size it was."""
     if not _marker_mode:
         return "Not in map mode"
-    return _release_marker()
+    note = _release_marker(click_after=True)
+    restored = restore_map_after_marker()
+    park_pointer()
+    return f"{note}; {restored}" if restored else note
 
 
 def marker_cancel() -> str:
-    """"cancel marker": let go of the button where the marker is and leave the marker panel. The map is not changed."""
-    return _release_marker()
+    """"cancel marker": let go of the button where the marker is, leave the panel, and put the map back to the size it was."""
+    note = _release_marker()
+    restored = restore_map_after_marker()
+    park_pointer()
+    return f"{note}; {restored}" if restored else note
 
 
-def _release_marker() -> str:
+def restore_pending() -> bool:
+    """True when the map was made large for a placement and has not been put back yet."""
+    return _marker_restore is not None
+
+
+def restore_map_after_marker() -> str:
+    """Put the map back to the size it was before place marker made it large (small, or minimized). Read by colour check."""
+    global _marker_restore
+    wanted, _marker_restore = _marker_restore, None
+    if wanted is None or map_size() != "large":
+        return ""
+    if wanted == "small":
+        return map_action("map smaller")
+    return map_action("map close")  # minimized: the large map's chevron closes it
+
+
+def settle_map_after_placement() -> str:
+    """After a ball placement: the map goes back to the size it started at. Started small: it stays small. Started
+    minimized: map close from small. Started large (no restore pending): map larger, back to large."""
+    global _marker_restore
+    wanted, _marker_restore = _marker_restore, None
+    if wanted == "small":
+        return "map stays small"
+    if wanted == "minimized":
+        return map_action("map close")
+    return map_action("map larger")
+
+
+def _release_marker(click_after: bool = False) -> str:
     """Let go of the held button where the pointer is now, and leave map mode."""
     global _marker_mode, _panel
     _halt_marker()
@@ -327,8 +365,13 @@ def _release_marker() -> str:
         return "Not in map mode"
     _marker_mode = False
     x, y = _cursor_pixel()
-    _send(MOUSEEVENTF_LEFTUP, x, y)
-    log.info("map mode ended: button released at (%d,%d)", x, y)
+    _send(MOUSEEVENTF_LEFTUP, x, y)  # let go of the held press where the cursor is
+    if click_after:  # set marker: a full left click there places the marker
+        time.sleep(PRESS_SECONDS)
+        _send(MOUSEEVENTF_LEFTDOWN, x, y)
+        time.sleep(PRESS_SECONDS)
+        _send(MOUSEEVENTF_LEFTUP, x, y)
+    log.info("map mode ended: button released at (%d,%d), clicked: %s", x, y, click_after)
     return "Marker placed"
 
 
@@ -392,7 +435,7 @@ def _marker_lag() -> float:
 
 def _marker_point() -> tuple[float, float]:
     """The marker's spot as a fraction of the window: the map center plus the offset."""
-    center = MAP_EXPANDED_CENTER if _map_expanded else MAP_SMALL_CENTER
+    center = MAP_EXPANDED_CENTER  # the marker is always placed on the large map: ensure_map_large makes it so first
     return (center[0] + _marker_offset[0], center[1] + _marker_offset[1])
 
 
@@ -539,6 +582,183 @@ def cancel_hole() -> str:
     _panel = None
     failed = _flag_click("cancel hole: flag icon")
     return failed or "cancel hole: done"
+
+
+# The mini map's size, read from the screen. Its header is a dark navy bar whose height says the size: about 93% down is
+# minimized, about 56% down is small, about 11% down is large (measured from the screenshots). Each bar is checked at three
+# points across it, so one dark patch of scene cannot pass for a header.
+# Each size is read from two points just above its icons, which sit in the header bar and are steady: above the arrows
+# and the chevron when large, above the middle arrows and chevron when small, above the bottom chevron when minimized.
+# Both points must be navy for that size.
+MAP_LINE_POINTS: dict[str, tuple[tuple[float, float], ...]] = {
+    "large": ((0.731, 0.0996), (0.979, 0.0996)),  # the clear band above the icons (y 107-118 of 1124)
+    "small": ((0.863, 0.528), (0.979, 0.528)),  # y 591-601
+    "minimized": ((0.863, 0.909), (0.977, 0.909)),  # y 1018-1027
+}  # checked in this order. Each point is in the header bar, above its icons and clear of the overlay boxes
+MAP_DARK = 90  # the highest colour value (red, green, blue) that counts as the dark header
+MAP_CHEVRON_LARGE = (0.979, 0.117)  # the right chevron at the top: minimizes a large map
+MAP_CHEVRON_SMALL = (0.979, 0.545)  # the right chevron in the middle: minimizes a small map
+MAP_CHEVRON_MINIMIZED = (0.977, 0.926)  # the chevron at the bottom: brings the minimized map back
+MAP_SHRINK_ICON = (0.731, 0.117)  # the two arrows left of the chevron, at the top: large to small
+MAP_EXPAND_ICON = (0.863, 0.545)  # the two arrows left of the chevron, in the middle: small to large
+MAP_SETTLE_SECONDS = 0.6  # the map moves after a click; its size is read again after this
+
+
+def _is_navy_header(colour: tuple[int, int, int]) -> bool:
+    red, green, blue = colour
+    return max(colour) < MAP_DARK and red < 60 and blue > green
+
+
+_map_last_logged: str | None = None  # the size last logged, so the log says only when it changes
+_map_read_at = 0.0
+_map_read_size: str | None = None
+
+
+def map_size() -> str | None:
+    """The mini map's size from the header line on screen. None when GSPro is not there or no line is dark."""
+    global _map_last_logged
+    from app.gspro_pixels import pixel_colour
+
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return None
+    rect = client_rect(hwnd)
+    samples = {size: [pixel_colour(*_point(rect, point)) for point in points] for size, points in MAP_LINE_POINTS.items()}
+    # A header is navy at every point across it: dark, with more blue than green (grass and scene do not pass).
+    found = next((size for size in MAP_LINE_POINTS if all(_is_navy_header(c) for c in samples[size])), None)
+    if found != _map_last_logged:
+        _map_last_logged = found
+        log.info("map size: header pixels %s -> %s", samples, found)
+    return found
+
+
+def map_size_cached() -> str | None:
+    """map_size, read at most twice a second: the overlay asks on every paint."""
+    global _map_read_at, _map_read_size
+    if time.monotonic() - _map_read_at >= 0.5:
+        _map_read_at = time.monotonic()
+        _map_read_size = map_size()
+    return _map_read_size
+
+
+def map_action(phrase: str) -> str:
+    """Expand, shrink, minimize or restore the mini map. Each reads the size first, so it only acts from the right size."""
+    size = map_size()
+    if size is None:
+        return f"{phrase}: map size not read; not clicked"
+    if phrase == "map larger":
+        if size != "small":
+            return f"map larger: the map is {size}, not small"
+        point = MAP_EXPAND_ICON
+    elif phrase == "map smaller":
+        if size != "large":
+            return f"map smaller: the map is {size}, not large"
+        point = MAP_SHRINK_ICON
+    elif phrase == "map close":
+        if size == "minimized":
+            return "map close: already minimized"
+        point = MAP_CHEVRON_LARGE if size == "large" else MAP_CHEVRON_SMALL
+    else:  # map open
+        if size != "minimized":
+            return f"map open: the map is {size}, not minimized"
+        point = MAP_CHEVRON_MINIMIZED
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return "GSPro window not found"
+    if not _force_foreground(hwnd):
+        return "could not bring GSPro to the front; not clicked"
+    _show_interface()
+    click(*_point(client_rect(hwnd), point), phrase)
+    park_pointer()
+    # The marker's spot depends on the map's size, so keep the size flag in step with what was clicked.
+    if phrase == "map larger":
+        set_map_expanded(True)
+    elif phrase == "map smaller":
+        set_map_expanded(False)
+    if phrase != "map open":
+        return f"{phrase}: done"
+    time.sleep(MAP_SETTLE_SECONDS)
+    now = map_size()
+    if now in ("large", "small"):
+        set_map_expanded(now == "large")
+    return f"map open: now {now or 'size not read'}"
+
+
+def ensure_map_large() -> str | None:
+    """Make the mini map large, by colour check, before a marker is placed: large is left alone, small is made larger,
+    and minimized is opened first (then made larger if it comes back small). None when it is large now."""
+    global _marker_restore
+    size = map_size()
+    if size is None:
+        return "map size not read; marker not placed"
+    _marker_restore = size if size in ("small", "minimized") else None  # the size to put back when the marker is done
+    if size == "minimized":
+        map_action("map open")  # map_action waits for the map to settle before it reads its size
+        size = map_size()
+    if size == "small":
+        map_action("map larger")
+        time.sleep(MAP_SETTLE_SECONDS)  # the map is still moving after the click
+        size = map_size()
+    return None if size == "large" else f"map is {size or 'unread'}, not large; marker not placed"
+
+
+# The additional ranges' lights and targets check boxes, bottom left. Fractions of the GSPro window.
+RANGE_TOGGLE_BOXES = {"toggle lights": (0.115, 0.958), "toggle targets": (0.198, 0.958)}
+# Two points inside the lights box, in its left half, where it is white whether it is ticked or not (the tick is in the middle).
+RANGE_TOGGLE_TEST = ((0.1125, 0.9537), (0.1125, 0.9626))
+_toggles_state = False  # the answer in use: the boxes move with the scene behind them, so it is held, not read every block
+_toggles_misses = 0  # reads in a row that found no boxes; the answer turns off after TOGGLE_MISSES_OFF of them
+_toggles_read_at = 0.0
+_toggles_last_read: bool | None = None  # the last raw reading, so the log says only when it changes
+TOGGLE_READ_SECONDS = 1.0
+TOGGLE_MISSES_OFF = 3
+
+
+def reset_range_toggles() -> None:
+    """Forget the answer: called when GSPro leaves the additional range, so the next one is read fresh."""
+    global _toggles_state, _toggles_misses, _toggles_read_at
+    _toggles_state, _toggles_misses, _toggles_read_at = False, 0, 0.0
+
+
+def range_toggles_here() -> bool:
+    """True when the screen has the lights and targets check boxes. Read about once a second; the boxes turn on at
+    once, and turn off only after several reads in a row find none."""
+    global _toggles_state, _toggles_misses, _toggles_read_at, _toggles_last_read
+    from app.gspro_pixels import pixel_colour
+
+    if time.monotonic() - _toggles_read_at < TOGGLE_READ_SECONDS:
+        return _toggles_state
+    _toggles_read_at = time.monotonic()
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return _toggles_state
+    rect = client_rect(hwnd)
+    samples = [pixel_colour(*_point(rect, point)) for point in RANGE_TOGGLE_TEST]
+    found = any(min(sample) > 170 for sample in samples)  # the log showed the first point is sometimes the scene behind the box
+    if found != _toggles_last_read:
+        _toggles_last_read = found
+        log.info("range toggles check: pixels %s -> %s", samples, "present" if found else "absent")
+    if found:
+        _toggles_misses = 0
+        _toggles_state = True
+    else:
+        _toggles_misses += 1
+        if _toggles_misses >= TOGGLE_MISSES_OFF:
+            _toggles_state = False
+    return _toggles_state
+
+
+def toggle_range_box(phrase: str) -> str:
+    """Click the lights or targets check box on an additional range."""
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is None:
+        return "GSPro window not found"
+    if not _force_foreground(hwnd):
+        return "could not bring GSPro to the front; not clicked"
+    _show_interface()
+    click(*_point(client_rect(hwnd), RANGE_TOGGLE_BOXES[phrase]), phrase)
+    park_pointer()
+    return f"{phrase}: done"
 
 
 def _click_wind(note: str) -> str | None:
@@ -734,7 +954,7 @@ def _marker_loop() -> None:
     global _marker_offset
     while not _marker_stop_event.is_set():
         direction = _marker_direction
-        if direction is None or _screen not in COURSE_PLAY_SCREENS:
+        if direction is None or _screen not in MARKER_SCREENS:
             break  # stopped, or the screen changed under us
         hwnd = find_window(GSPRO_TITLE)
         if hwnd is None:
@@ -945,7 +1165,7 @@ def current_panel() -> str | None:
     global _panel
     if _panel == WIND_PANEL and _screen not in WIND_SCREENS:
         _panel = None  # the wind panel belongs to the practice range and course practice
-    if _panel == MARKER_PANEL and _screen not in COURSE_PLAY_SCREENS:
+    if _panel == MARKER_PANEL and _screen not in MARKER_SCREENS:
         _panel = None  # the marker panel belongs to the course screens
     if _panel == HOLE_PANEL and _screen not in HOLE_SCREENS:
         _panel = None  # the hole panel belongs to course practice
@@ -1015,6 +1235,8 @@ def _remember_panel(name: str, note: str) -> None:
         _panel = None  # a panel that belongs to one screen closes when the app is on another
 # Screens with the course map and its marker commands: course play, and course practice (a real course).
 COURSE_PLAY_SCREENS = ("play", "course_practice")
+# The mini map is the same on the range screens (same place, same S key), so the marker works there too.
+MARKER_SCREENS = (*COURSE_PLAY_SCREENS, "range", "driving_range")
 
 
 def _settle_floor(short: bool = False) -> float:
@@ -1259,7 +1481,7 @@ def run_sequence(name: str) -> str:
 def request_exit(on_done: Callable[[str], None] | None = None) -> str:
     """Closes GSpro and the connectors. Only from the home screen, which the grammar enforces."""
     if _screen != "home":
-        return "application exit: only from the home screen; say sync to home screen if GSPro is already there"
+        return "application exit: only from the home screen; say sync to home chooser if GSPro is already there"
     return run_in_background("application exit", on_done)
 
 
@@ -1297,13 +1519,21 @@ def _remember_screen(name: str, note: str) -> None:
         _screen = SCREEN_AFTER[name]
     else:
         _screen = None  # clicked something we do not track; the screen is unknown
-    if _screen not in COURSE_PLAY_SCREENS and _marker_mode:
+    if _screen not in MARKER_SCREENS and _marker_mode:
         _release_marker()  # never leave the mouse button held once the play screen is gone
 
 
 # Sequences that leave the mouse where it is. None yet; add a sequence name here to keep its cursor in place.
 PARK_EXEMPT: frozenset[str] = frozenset()
 PARK_DELAY_SECONDS = 0.1
+
+
+def park_pointer() -> None:
+    """Move the pointer to the parking spot after any action that clicks in GSPro, as sequences do, so it is not left on
+    screen over the tiles or the map. A no-op when GSPro is not up."""
+    hwnd = find_window(GSPRO_TITLE)
+    if hwnd is not None:
+        _park_cursor(hwnd)
 
 
 def _park_cursor(hwnd: int) -> None:
@@ -1313,7 +1543,7 @@ def _park_cursor(hwnd: int) -> None:
         return
     time.sleep(PARK_DELAY_SECONDS)  # GSPro must register the last click before the mouse moves
     x, y = _point(client_rect(hwnd), PARK_POINT)
-    ctypes.windll.user32.SetCursorPos(x, y)
+    ctypes.windll.user32.SetCursorPos(x, y)  # an instant jump: the pointer goes to the corner and is out of sight
 
 
 # Shortcuts from the home screen: each skips the practice screen, so they run the whole path. They have their own
@@ -1368,7 +1598,7 @@ def _run(name: str) -> str:
     if name in ("apply", "close prefs", "done", "random on", "random off") and slider_active():
         return f"{name}: say stop first; a slider is being dragged"
     if name == "application exit" and _screen != "home":
-        return f"{name}: only from the home screen; say sync to home screen if GSPro is already there"
+        return f"{name}: only from the home screen; say sync to home chooser if GSPro is already there"
     if name == "clear filter":
         from app.course_chooser import filter_has_text
 

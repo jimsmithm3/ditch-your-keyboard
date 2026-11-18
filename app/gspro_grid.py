@@ -291,10 +291,10 @@ def _click_point(x: float, y: float) -> None:
 MAP_RESIZE_SECONDS = 0.6  # a settle pause after the S key, so GSPro has finished resizing the mini map
 MAP_RESTORE_WAIT_SECONDS = 1.0  # before the S key that makes the map small again, after the ball icon click
 PLACE_HOVER_SECONDS = 1.0  # the cursor rests on the picked point before the press, so the ball cursor is there first
+KEY_SETTLE_SECONDS = 0.5  # after Shift (flag) or Ctrl (ball) goes down, before the click: GSPro reads the key on its own frames
 SETTLE_SECONDS = 0.5  # a pause between the point click and the ball icon click, so GSPro takes the first one
 ZOOM_PAUSE_SECONDS = 0.3  # between the zoom in and zoom out taps, so GSPro sees each one
 _placing_flag = False  # True for "place pin": the flag is placed with Shift held, not the ball with Ctrl
-_restore_small = False  # True while the map is large only for ball placement; it goes back to small after
 
 
 def _live_map_state(hwnd: int) -> str:
@@ -329,41 +329,25 @@ def _live_map_state(hwnd: int) -> str:
 
 
 def _map_to_large(hwnd: int) -> bool:
-    """Ball placement only works on the large map. The screen decides: if it shows the small map, press S once and
-    check again. The app's flag follows what the screen shows. False if DYK cannot tell what it is looking at."""
-    global _restore_small
-    from app.gspro_sequences import set_map_expanded
+    """Ball placement only works on the large map. Made large by colour check, the same way place marker does it
+    (see ensure_map_large); the size it started at is kept, to put back when the grid closes."""
+    from app.gspro_sequences import ensure_map_large
 
-    state = _live_map_state(hwnd)
-    log.info("place ball: the screen shows the map as %s", state)
-    if state == "unknown":
-        set_status("DYK is lost: it can't read the mini map. Say sync map small or sync map large, then place ball again.")
+    err = ensure_map_large()
+    if err:
+        set_status(f"Ball not placed: {err}")
         return False
-    if state == "large":
-        set_map_expanded(True)
-        return True
-    press_keys("s")
-    time.sleep(MAP_RESIZE_SECONDS)
-    state = _live_map_state(hwnd)
-    set_map_expanded(state == "large")
-    if state != "large":
-        set_status("DYK is lost: the map did not change size. Say sync map small or sync map large, then place ball again.")
-        return False
-    _restore_small = True
     return True
 
 
 def _map_restore() -> None:
-    """Put the map back to small if placement made it large."""
-    global _restore_small
-    if not _restore_small:
-        return
-    _restore_small = False
-    from app.gspro_sequences import toggle_map
+    """Put the map back to the size it started at, if placement made it large."""
+    from app.gspro_sequences import restore_map_after_marker, restore_pending
 
+    if not restore_pending():
+        return
     time.sleep(MAP_RESTORE_WAIT_SECONDS)  # a full second, so the ball icon click has settled before the map changes
-    press_keys("s")
-    toggle_map()
+    restore_map_after_marker()
 
 
 class _CursorInfo(ctypes.Structure):
@@ -425,15 +409,17 @@ def _finish(x: float, y: float) -> None:
     """The final pick, made on the large map. GSPro seems to ignore a placement outside the small map, so: shrink
     the map, click the same relative spot on the small map with Ctrl held (which places the ball), then expand
     the map again if it was large before placement."""
-    global _restore_small
-    originally_large = not _restore_small  # if placement had to make the map large, it was small to begin with
-    _toggle_map_size()  # shrink for the placement
-    _restore_small = False
+    from app.gspro_sequences import map_action
+
+    map_action("map smaller")  # the map is large here (see _map_to_large); shrink it for the placement
+    time.sleep(MAP_RESIZE_SECONDS)
     sx, sy = _to_small_map(x, y)
     key = "shift" if _placing_flag else "ctrl"  # a flag is placed while Shift is held; a ball while Ctrl is
     log.info("place %s: large map point %.3f, %.3f is small map point %.3f, %.3f", _what(), x, y, sx, sy)
     _hold_key(key, True)
+    time.sleep(KEY_SETTLE_SECONDS)  # the held key must be seen by GSPro before its press, or the click places a ball, not a flag
     try:
+        log.info("place %s: %s down at the point click: %s", _what(), key, _key_down(key))
         _click_point(sx, sy)
         time.sleep(SETTLE_SECONDS)
         ball = _cursor_is_ball()
@@ -447,9 +433,12 @@ def _finish(x: float, y: float) -> None:
             )
     finally:
         _hold_key(key, False)  # released before the S key, so it is not a Ctrl+S or Shift+S
-    if originally_large:
-        _toggle_map_size()  # the map was large before placement: make it large again
+    from app.gspro_sequences import park_pointer, settle_map_after_placement
+
+    log.info("place %s: map after placement: %s", _what(), settle_map_after_placement())  # back to the size it started at
+    time.sleep(MAP_RESIZE_SECONDS)
     _refresh_map()
+    park_pointer()  # the placement is done: the pointer goes back to the parking spot
 
 
 def _refresh_map() -> None:
@@ -474,6 +463,16 @@ def _what() -> str:
     return "flag" if _placing_flag else "ball"
 
 
+def _key_down(name: str) -> bool:
+    """True when Windows says the key is down now (Shift or Ctrl, by name)."""
+    vk = {"shift": 0x10, "ctrl": 0x11}[name]
+    return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+
+
+def _shift_down() -> bool:
+    return _key_down("shift")
+
+
 def _place_ball(flag: bool = False) -> None:
     """Make the map large if needed, click the ball icon (placement mode), then pick the point on the grid.
     The grid covers the large map only, so the point is on the map. With flag, the icon is clicked while Shift is
@@ -488,7 +487,9 @@ def _place_ball(flag: bool = False) -> None:
         return
     if flag:
         _hold_key("shift", True)
+        time.sleep(KEY_SETTLE_SECONDS)  # GSPro reads the key on its own frames: let it see Shift down before the press
     try:
+        log.info("place %s: shift down at the icon click: %s", _what(), _shift_down())
         click(*_point(client_rect(hwnd), BALL_ICON), f"place {_what()}: icon")
     finally:
         if flag:

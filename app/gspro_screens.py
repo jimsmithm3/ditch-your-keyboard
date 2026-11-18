@@ -39,7 +39,7 @@ class Screen:
 # it lists the group's name in its groups.
 GROUPS: dict[str, tuple[str, ...]] = {
     "Back": ("back screen",),
-    "Range": ("open prefs", "change driving range distance", "slide left", "slide right"),
+    "GSPro practice range": ("open prefs", "change driving range distance", "slide left", "slide right"),  # only on that screen
     "Slider": ("slide left", "slide right"),  # a slider's own words: loaded with any panel that has sliders on it
     # stop while a slider is moving (a drag or a slide). Otherwise stop belongs to the hitting group.
     "Slider stop": ("stop",),  # GSPro Range only: the driving range panel (see PANELS); close prefs is in the panel grammar
@@ -155,12 +155,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "shadow five",
         "tee left",
         "tee right",
-        "zoom in",
-        "zoom out",
-        f"toggle map",
         "mini map",
         "shrink map",
-        "place marker",
         f"toggle free flight",
         f"toggle flight",
         "sync map small",
@@ -203,7 +199,14 @@ GRID_WORDS: tuple[str, ...] = (
     "zulu",
 )
 GRID_INDEX: dict[str, int] = {word: index for index, word in enumerate(GRID_WORDS)}
-GRID_PHRASES: tuple[str, ...] = (*GRID_WORDS, "hide place", "cancel place", "redo", "toggle map")
+# The zoom words take one step, a number of steps ("zoom in five"), or repeat until "stop" ("zoom in repeat"). The grid
+# hears all those forms, and "stop" ends a continuous zoom. Place marker and place pin are not grid words: they are
+# their own commands on the map (see GROUPS["Map"]), and they close the grid like any other command.
+GRID_PHRASES: tuple[str, ...] = (
+    *GRID_WORDS,
+    "cancel place", "redo",
+    "zoom in", "zoom out", *repeat_variants("zoom in"), *repeat_variants("zoom out"), "stop",
+)
 
 # The punctuation words the filter types (app/text_entry.py). They are listed after the letters and the digits.
 PUNCTUATION_WORDS: tuple[str, ...] = ("space", "underscore", "dash", "comma", "period", "parenthesis", "number sign", "plus sign")
@@ -216,7 +219,11 @@ GROUPS["Filter backspace"] = ("backspace",)  # the display's fourth property: de
 GROUPS["Filter control"] = ("end filter",)
 # The notes view when it has no cancel button (opened from additional driving ranges): its words, all but cancel.
 GROUPS["Notes view without cancel"] = ("close", "read more", "latest scores", "play course", "play course now")
-RUNTIME_GROUPS: tuple[str, ...] = ("Filter letters", "Filter digits", "Filter punctuation", "Filter backspace", "Filter control")
+# The additional ranges' lights and targets check boxes. Listened for only where the screen has them (see the listener).
+GROUPS["Range toggles"] = ("toggle lights", "toggle targets")
+# The mini map, as on the course screens. Every range has one. Free flight is course-only, so it is not here.
+GROUPS["Map"] = ("zoom in", "zoom out", "toggle map", "map close", "map open", "map larger", "map smaller", "place marker", "place pin")
+RUNTIME_GROUPS: tuple[str, ...] = ("Filter letters", "Filter digits", "Filter punctuation", "Filter backspace", "Filter control", "Range toggles")
 
 # The commands dialog's tab phrases. Their own grammar, on only while the dialog is open (see the listener).
 
@@ -226,18 +233,17 @@ GLOBAL: tuple[str, ...] = (
     f"toggle keyboard",
     f"start application",
     "toggle overlay",
-    "overlay larger",
-    "overlay smaller",
-    "overlay red",
-    "overlay blue",
-    f"toggle fullscreen",
+    "overlay preferences",
+    "sync help",
     "overlay refresh",
+    "toggle labels",
+    f"toggle fullscreen",
 )
 
 SCREEN_RECORDS: tuple[Screen, ...] = (
     Screen(
         "home",
-        "Home",
+        "Home chooser",
         None,
         trans=(
             Trans(f"begin practice", "practice", f"begin practice"),
@@ -254,15 +260,14 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
     ),
     Screen(
         "local_match",
-        "Local match",
+        "Play course chooser",
         "home",
         trans=(Trans("play <course>", "round_settings_play", "play course"),),
         groups=("Back", "Course chooser"),
-        note="course chooser",
     ),
     Screen(
         "practice",
-        "Practice",
+        "Practice chooser",
         "home",
         trans=(
             Trans(f"begin gspro practice range", "range", f"begin gspro practice range"),
@@ -276,39 +281,38 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
     Screen("online", "Online match", "home"),
     Screen(
         "range",
-        "GSPro Range",
+        "GSPro practice range",
         "practice",
-        groups=("Range", "hitting_base", "Club", "hitting_range", "Wind and tracer"),
+        groups=("GSPro practice range", "hitting_base", "Club", "hitting_range", "Wind and tracer", "Map"),
         note="hit balls",
-        phrases=("show game menu", "end round"),
+        phrases=("show game menu", "end round", "place ball"),
     ),
     Screen(
         "on_course",
-        "On course practice",
+        "On practice course chooser",
         "practice",
         trans=(Trans("play <course>", "round_settings_practice", "play course"),),
         groups=("Back", "Course chooser"),
-        note="course chooser",
     ),
     Screen(
         "additional",
-        "Additional Driving Ranges",
+        "Additional ranges chooser",
         "practice",
         trans=(Trans("play <range name>", "driving_range", "play course"),),
         groups=("Back", "Course chooser"),
-        note="range chooser",
     ),
     Screen(
         "driving_range",
-        "Additional Range",
+        "Additional range",
         "additional",
-        groups=("hitting_base", "Club", "Menu", "hitting_range"),
+        groups=("hitting_base", "Club", "Menu", "hitting_range", "Map"),
         note="hit balls",
+        phrases=("place ball",),
     ),
     # Round settings, reached from On course practice (practice) or Local match (play).
     Screen(
         "round_settings_practice",
-        "Round Settings - Practice",
+        "Practice course settings",
         "on_course",
         trans=(
             # PLAY on round settings. The course name is heard by the course grammar; the literal
@@ -319,15 +323,15 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
     ),
     Screen(
         "course_practice",
-        "Course Practice",
+        "Practice course",
         "round_settings_practice",
-        groups=("Aim", "View", "hitting_base", "Club", "Menu", "hitting_course", "Wind and tracer"),
+        groups=("Aim", "View", "hitting_base", "Club", "Menu", "hitting_course", "Wind and tracer", "Map"),
         # Only on course practice: 8 goes to the ball, 9 and 0 move between holes. Place ball is here too.
-        phrases=("place ball", "place pin", "go to ball", "previous hole", "next hole", "change hole"),
+        phrases=("place ball", "go to ball", "previous hole", "next hole", "change hole"),
     ),
     Screen(
         "round_settings_play",
-        "Round Settings - Play",
+        "Play course settings",
         "local_match",
         trans=(
             Trans("play <course>", "play", "play course", aliases=("play course",)),
@@ -336,9 +340,9 @@ SCREEN_RECORDS: tuple[Screen, ...] = (
     ),
     Screen(
         "play",
-        "Course play",
+        "Play course",
         "round_settings_play",
-        groups=("Aim", "View", "hitting_base", "Club", "Menu", "hitting_course"),
+        groups=("Aim", "View", "hitting_base", "Club", "Menu", "hitting_course", "Map"),
         phrases=(f"toggle scorecard",),  # course play only, not course practice
         note="hit balls",
     ),
@@ -380,6 +384,23 @@ GROUP_GRAMMAR_NAMES: tuple[str, ...] = tuple(
     group_grammar(name) for name in GROUPS if GROUPS[name] and name not in RUNTIME_GROUPS
 )
 
+# The marker panel's words, in the order its list shows them. Zoom takes one step, a number of steps, or runs until stop,
+# as on the grid. "set marker" drops the marker.
+MARKER_CMDS: tuple[str, ...] = ("left", "right", "up", "down", "stop", "set marker", "cancel marker", "zoom in", "zoom out")
+
+# The sync help dialog's names: each "sync to <name>" phrase without "sync to". The dialog listens for these only while it is up.
+SYNC_NAME_PHRASES: dict[str, str] = {phrase[len("sync to "):]: phrase for phrase in SYNC_PHRASES}
+
+
+def sync_name_in(text: str) -> str | None:
+    """The "sync to" phrase for the longest sync name said in text, or None. Used only while the sync help dialog is up."""
+    from app.commands import spoken_text
+
+    padded = f" {spoken_text(text)} "
+    found = [name for name in SYNC_NAME_PHRASES if f" {name} " in padded]
+    return SYNC_NAME_PHRASES[max(found, key=len)] if found else None
+
+
 # Panels are sub-screens: a dialog or panel that opens on a screen and gets its own grammar while
 # it is open. Named by what it is, since more will be added (the map will be one). Opened and
 # closed by the sequences in gspro_sequences.PANEL_OPENERS and PANEL_CLOSERS.
@@ -408,10 +429,15 @@ PANELS: dict[str, tuple[str, ...]] = {
     # The wind panel: its own grammar while it is open. "close" clicks the wind speed again.
     "wind_panel": ("change direction", "change strength", "close"),
     # The marker: while it is held, only these listen. "cancel" releases the button and leaves the panel.
-    "marker_panel": ("left", "right", "up", "down", "stop", "place marker", "cancel marker", f"toggle map"),
+    # The sync help dialog: a screen name syncs to it (and closes the dialog), or cancel closes it.
+    "sync_help": (*SYNC_NAME_PHRASES, "cancel"),
+    "marker_panel": (*MARKER_CMDS, *repeat_variants("zoom in"), *repeat_variants("zoom out")),
     # The change hole panel on course practice: a hole number clicks it, cancel closes it.
     "hole_panel": ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
                    "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "cancel"),
+    # The overlay preferences: an app dialog, not a GSPro one. The screen's overlay stays up under it, and each change is
+    # applied to the dialog and to the overlay at once, so the look can be tweaked until it suits. "overlay refresh" is always on (GLOBAL).
+    "overlay_preferences": ("red", "blue", "grey", "larger", "smaller", "master", "newbie", "cancel"),
 }
 
 # Views are fixed areas on a screen whose contents change with the circumstances (the course list's notes and
@@ -454,6 +480,8 @@ PANEL_NAMES: dict[str, str] = {
     "marker_panel": "Marker",
     "hole_panel": "Change hole",
     "game_menu_panel": "Game menu",
+    "overlay_preferences": "Overlay preferences",
+    "sync_help": "Sync help",
 }  # what the tree box says
 PANEL_PARENTS: dict[str, str] = {
     "driving_preferences_panel": "range",
@@ -462,6 +490,8 @@ PANEL_PARENTS: dict[str, str] = {
     "hole_panel": "course_practice",
     "game_menu_panel": "play",
     "end_round_confirm": "play",  # where its box sits in the tree; it opens from several screens (see PANEL_SCREEN_ONLY)
+    "overlay_preferences": "home",  # the app's own dialog; the tree shows it under home
+    "sync_help": "home",
 }
 # Panels that close when the app is on another screen. Others stay open wherever they were opened.
 PANEL_SCREEN_ONLY: dict[str, str] = {"driving_preferences_panel": "range"}

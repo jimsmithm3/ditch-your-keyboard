@@ -33,6 +33,7 @@ from app.gspro_screens import (
     GRID_PHRASES,
     recognizer_setup,
     screen_group,
+    sync_name_in,
 )
 from app.gspro_tree import SYNC_PHRASES
 from app.focus import ensure_gspro, prepare_gspro
@@ -46,6 +47,7 @@ from app.gspro_sequences import (
     NOTES_VIEW,
     SEQUENCES,
     current_screen,
+    restore_pending,
     run_course_in_background,
     MAP_SIZE_PHRASES,
     set_map_size,
@@ -108,7 +110,9 @@ from app.wsapi_recognizer import WsapiRecognizer
 
 log = logging.getLogger(__name__)
 
-VOICE_PAGES = ("Voice", "Overview")  # pages where voice commands run
+GRID_CLOSE_WAIT_SECONDS = 2.5  # place marker said on the grid: the grid's close puts the ball's map size back (about 1.5 s) first
+
+VOICE_PAGES =("Voice", "Overview")  # pages where voice commands run
 WAKE_REQUIRED_KEY = "wake_required"  # "True" = say "hey caddie" first; "False" = a command is heard alone
 SAMPLE_RATE = 16000
 def input_devices() -> list[tuple[int, str]]:
@@ -168,6 +172,7 @@ class VoiceListener(QObject):
     notice = Signal(str)
     mode = Signal(bool)  # True when listening, False after f"toggle listening" pauses
     help_boxes = Signal(bool)  # "toggle overlay": True draws the red boxes over GSPro, False hides them
+    sync_tree = Signal(bool)  # "sync help": True shows the screen tree window, False hides it
     grid = Signal(object)  # the numbered grid: ("show", None), ("close", None), or ("pick", digit)
     legend = Signal(object)  # the course filter's letter list: (shown, typed); drawn on the GUI thread
     grammars = Signal(object)  # the grammars listening right now, as a list of readable names (debug box)
@@ -183,7 +188,10 @@ class VoiceListener(QObject):
         self.listening = True  # False after f"toggle listening" pauses: only f"toggle listening" is heard
         self._course_grammar_on = False  # the course-name grammar is listened for only on On course practice
         self._screen_groups_on: set[str] = set()  # the per-screen grammars switched on right now
-        self._help_open = False  # the overlay boxes are up
+        from app.gspro_boxes import overlay_on_at_start
+        self._help_open = overlay_on_at_start()  # the overlay boxes are up; on at start if the saved preference says so
+        self._help_before_prefs = False  # the overlay's state when the preferences dialog opened: restored when it closes
+        self._return_timer = None  # puts the overlay boxes back a moment after a screen change
         self._on_course_before = False  # GSPro was on the course list at the last check
         course_chooser.set_help_hooks(lambda: self.help_boxes.emit(False), lambda: self.help_boxes.emit(self._help_open))
         self._grid_on = False  # the numbered grid is up, so its digit words listen
@@ -197,15 +205,28 @@ class VoiceListener(QObject):
     def _pause_help(self) -> None:
         """Takes the overlay boxes down while a GSPro sequence clicks, so they are not drawn on the new screen. The help
         flag stays on; _after_sequence puts the boxes back on whatever screen the sequence reached."""
+        if self._return_timer is not None:
+            self._return_timer.cancel()  # a sequence starts again before the boxes came back: they stay down
+            self._return_timer = None
         if self._help_open:
             self.help_boxes.emit(False)
+
+    def _end_sync_help(self) -> str:
+        """Close the sync help: stop listening for screen names and hide its tree window."""
+        from app.gspro_boxes import close_sync_help
+
+        self.sync_tree.emit(False)
+        return close_sync_help()
 
     def _resume_help(self) -> None:
         self.help_boxes.emit(self._help_open)  # on again if help is still toggled on
 
     def _after_sequence(self, note: str) -> None:
         if self._help_open:
-            self.help_boxes.emit(True)  # on again, as it was read when it was turned on
+            # GSPro takes a moment to load the new screen. The boxes come back a short while later, so they are not
+            # drawn over the old screen.
+            self._return_timer = threading.Timer(1.5, self.help_boxes.emit, args=(True,))
+            self._return_timer.start()
         else:
             self.help_boxes.emit(False)
         self.notice.emit(note)
@@ -290,6 +311,11 @@ class VoiceListener(QObject):
             if view == NOTES_VIEW and not course_chooser.notes_view_has_cancel():
                 name = group_grammar("Notes view without cancel")  # the same words, but no cancel
             wanted = base | {name}  # a view adds to its screen: the screen's words still listen
+        from app.gspro_boxes import overlay_prefs_open, sync_help_open
+        if overlay_prefs_open():
+            wanted = {panel_group("overlay_preferences")}  # the overlay preferences are modal: only their words listen
+        if sync_help_open():
+            wanted = {panel_group("sync_help")}  # the sync help dialog is modal too: only its names and cancel listen
         if text_entry.active():
             if screen is not None and screen != "on_course":
                 text_entry.stop()  # the filter belongs to the course chooser; leaving it turns it off
@@ -297,6 +323,11 @@ class VoiceListener(QObject):
             else:
                 # The filter display locks out the rest of the screen while it is typing: only its own words listen.
                 wanted = {group_grammar(name) for name in text_entry.grammar_groups()}  # nothing else listens, back included
+        from app.gspro_sequences import range_toggles_here, reset_range_toggles
+        if screen != "driving_range":
+            reset_range_toggles()  # the next additional range is read fresh
+        elif not overlay_prefs_open() and range_toggles_here():
+            wanted.add(group_grammar("Range toggles"))  # this additional range has the lights and targets check boxes
         if screen not in COURSE_LIST_SCREENS:
             course_chooser.forget_notes_view()  # the notes view belongs to the course list
         elif course_chooser.dialog_state() == "latest_scores":
@@ -466,7 +497,10 @@ class VoiceListener(QObject):
                     return
                 self.heard.emit(text)
                 self.utterance.emit(text)
-                phrase = match_command(text)
+                from app.gspro_boxes import sync_help_open
+
+                # While the sync help dialog is up, a screen name is looked for first (it is not a command of its own).
+                phrase = (sync_name_in(text) if sync_help_open() else None) or match_command(text)
                 if phrase == f"toggle listening":
                     self._set_listening(not self.listening)  # paused: this resumes; listening: this pauses
                     return
@@ -475,8 +509,11 @@ class VoiceListener(QObject):
                 if phrase and (not wake_required or contains_wake(text) or armed_until):
                     armed_until = 0.0
                     note = ""
-                    if self._grid_on and phrase not in GRID_PHRASES and phrase != "hide place":
+                    from app.gspro_boxes import overlay_prefs_open  # the close branch below needs it in this scope
+                    closed_grid = False  # True when this word closes the grid
+                    if self._grid_on and phrase not in GRID_PHRASES:
                         # Any other command ends the grid, so the screen's own grammar can come back.
+                        closed_grid = True
                         self._grid_on = False
                         self.grid.emit(("close", None))
                     if phrase not in ("close", "stop") and not is_continue(phrase) and not holds_key(phrase):
@@ -518,6 +555,7 @@ class VoiceListener(QObject):
                         sent = False
                         label = "marker"
                         if phrase == "stop":
+                            release()  # a continuous zoom (a held key) lets go here
                             note = stop_motion()
                             self._sync_screen_grammar(rec)  # the drag has ended: its stop is no longer listened for
                         elif phrase in SLIDER_PHRASES:
@@ -527,11 +565,27 @@ class VoiceListener(QObject):
                             note = flight_mode_toggle()
                         else:
                             note = marker_move(phrase)
-                    elif phrase == "place marker":
+                    elif phrase == "toggle labels":
+                        from app.gspro_boxes import toggle_labels
+                        move = None
+                        sent = False
+                        release()
+                        label = "overlay"
+                        note = toggle_labels()
+                    elif phrase in ("map close", "map open", "map larger", "map smaller"):
+                        from app.gspro_sequences import map_action
+                        move = None
+                        sent = False
+                        release()
+                        label = "map"
+                        note = map_action(phrase)
+                    elif phrase in ("place marker", "set marker"):  # set marker drops it while the marker panel is up
                         move = None
                         sent = False
                         release()
                         label = "marker"
+                        if closed_grid and restore_pending():
+                            time.sleep(GRID_CLOSE_WAIT_SECONDS)  # the grid's close puts the ball's map size back first
                         note = marker_end() if marker_placing() else place_marker()
                     elif phrase == "change hole":
                         move = None
@@ -551,13 +605,6 @@ class VoiceListener(QObject):
                         release()
                         label = "hole"
                         note = cancel_hole()
-                    elif phrase == f"toggle map" and current_panel() == "marker_panel":
-                        # S only: the app's map flag is not changed, so the user can sync it afterwards.
-                        move = None
-                        sent = False
-                        release()
-                        label = "marker"
-                        note = marker_map_key()
                     elif phrase == "cancel marker" and current_panel() == "marker_panel":
                         # Releases the button where the marker is, makes the map small again if place marker made it large,
                         # and leaves the marker panel.
@@ -574,13 +621,6 @@ class VoiceListener(QObject):
                         self._grid_on = True  # the grid's words listen while it is up
                         self.grid.emit(("place", "flag" if flag else "ball"))
                         note = f"Place {label}: click the {label} icon, then pick the point"
-                    elif phrase == "hide place":
-                        move = None
-                        sent = False
-                        label = "grid"
-                        self._grid_on = False
-                        self.grid.emit(("close", None))
-                        note = "Grid closed"
                     elif phrase == "cancel place":
                         move = None
                         sent = False
@@ -602,39 +642,47 @@ class VoiceListener(QObject):
                             self._pause_help()  # the overlay boxes cover the row's Play button, which is read from the screen
                         note = course_chooser.handle(phrase)
                         self.legend.emit((text_entry.active(), text_entry.typed()))
-                    elif self._grid_on and phrase == "toggle map":
-                        move = None
-                        sent = False
-                        label = "grid"
-                        self.grid.emit(("map", None))
-                        note = "Place: map size key pressed; flag unchanged"
                     elif self._grid_on and phrase == "redo":
                         move = None
                         sent = False
                         label = "grid"
                         self.grid.emit(("redo", None))
                         note = "Grid: redo"
-                    elif self._grid_on and phrase in GRID_PHRASES:
+                    elif self._grid_on and phrase in GRID_INDEX:
                         move = None
                         sent = False
                         label = "grid"
                         self.grid.emit(("pick", GRID_INDEX[phrase]))
                         note = f"Grid: {phrase}"
-                    elif phrase in ("overlay red", "overlay blue"):
+                    elif phrase in ("toggle lights", "toggle targets"):
+                        from app.gspro_sequences import toggle_range_box
+                        move = None
+                        sent = False
+                        release()
+                        label = "range"
+                        note = toggle_range_box(phrase)
+                    elif phrase in ("red", "blue", "grey"):
                         from app.gspro_boxes import set_look
                         move = None
                         sent = False
                         release()
                         label = "overlay"
-                        note = set_look(phrase == "overlay blue")
-                    elif phrase in ("overlay larger", "overlay smaller"):
+                        note = set_look(phrase)
+                    elif phrase in ("master", "newbie"):
+                        from app.gspro_boxes import set_overlay_on_at_start
+                        move = None
+                        sent = False
+                        release()
+                        label = "overlay"
+                        note = set_overlay_on_at_start(phrase == "newbie")
+                    elif phrase in ("larger", "smaller"):
                         from app.gspro_boxes import change_font
                         move = None
                         sent = False
                         release()
                         label = "overlay"
-                        note = change_font(1 if phrase == "overlay larger" else -1)
-                        if phrase == "overlay larger" and self._help_open:
+                        note = change_font(1 if phrase == "larger" else -1)
+                        if phrase == "larger" and self._help_open:
                             course_chooser.scan_rows_async()  # then read the rows again, as "overlay refresh" does
                     elif phrase == "overlay refresh":
                         move = None
@@ -658,6 +706,41 @@ class VoiceListener(QObject):
                         else:
                             self.help_boxes.emit(False)
                         note = "Showing the overlay" if self._help_open else "Overlay closed"
+                    elif phrase == "sync help":
+                        from app.gspro_boxes import open_sync_help
+                        move = None
+                        sent = False
+                        release()
+                        label = "dialog"
+                        note = open_sync_help()
+                        self.sync_tree.emit(True)  # the tree window comes up
+                    elif phrase == "cancel" and sync_help_open():
+                        move = None
+                        sent = False  # nothing is sent to GSPro
+                        release()
+                        label = "dialog"
+                        note = self._end_sync_help()
+                    elif phrase == "overlay preferences":
+                        from app.gspro_boxes import open_overlay_prefs
+                        move = None
+                        sent = False
+                        release()
+                        label = "dialog"
+                        note = open_overlay_prefs()
+                        self._help_before_prefs = self._help_open  # the overlay goes back to this when the dialog closes
+                        if not self._help_open:
+                            self._help_open = True  # the preferences are shown over the overlay, so the boxes come up too
+                            course_chooser.scan_rows_async()
+                    elif phrase == "cancel" and overlay_prefs_open():
+                        from app.gspro_boxes import close_overlay_prefs
+                        move = None
+                        sent = False  # nothing is sent to GSPro; the code after the chain reads this
+                        release()
+                        label = "dialog"
+                        note = close_overlay_prefs()
+                        if not self._help_before_prefs:
+                            self._help_open = False  # it was off before the dialog, so it goes off again
+                            self.help_boxes.emit(False)
                     elif phrase == "close" and current_panel() == "wind_panel":
                         move = None
                         sent = False
@@ -709,6 +792,8 @@ class VoiceListener(QObject):
                         release()
                         label = phrase
                         note = sync_screen(SYNC_PHRASES[phrase])
+                        if sync_help_open():  # a name said in the sync help dialog syncs, then the dialog closes
+                            note = f"{note}; {self._end_sync_help()}"
                     elif phrase in MAP_SIZE_PHRASES:
                         # Tells the app the mini map's size. No clicks, no keys.
                         move = None
@@ -741,7 +826,7 @@ class VoiceListener(QObject):
                         note = debug_press_in_background(on_done=self.notice.emit)
                     else:
                         move = self.bag.apply(phrase) or shadows.apply(phrase)
-                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith("play") or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase in ("toggle overlay", "overlay refresh", "overlay larger", "overlay smaller") or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
+                    if phrase in ("close", "stop", LAUNCH_PHRASE, DEBUG_PHRASE) or phrase.startswith("play") or phrase in SEQUENCES or phrase in SYNC_PHRASES or phrase in MAP_SIZE_PHRASES or phrase in MARKER_DIRECTIONS or phrase in MAP_MODE_PHRASES or phrase in FLIGHT_TOGGLE_PHRASES or phrase in SLIDER_PHRASES or phrase in ("toggle overlay", "overlay preferences", "overlay refresh", "larger", "smaller", "red", "blue", "grey", "master", "newbie", "cancel", "toggle lights", "toggle targets", "map close", "map open", "map larger", "map smaller", "toggle labels") or phrase in ("hide place", "place ball", "place pin") or phrase in course_chooser.PHRASES or (text_entry.active() and text_entry.accepts(phrase)) or (self._grid_on and phrase in GRID_PHRASES):
                         pass
                     elif move is not None:
                         self.club.emit(self.bag.club)
@@ -760,7 +845,7 @@ class VoiceListener(QObject):
                             binding = "esc" if ui_hidden() else "h"
                         if (is_continue(phrase) or holds_key(phrase)) and isinstance(binding, str):
                             label = (
-                                f"{key_label(binding)} continue"
+                                f"{key_label(binding)} repeat"
                                 if is_continue(phrase)
                                 else key_label(binding)
                             )

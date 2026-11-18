@@ -16,6 +16,7 @@ from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from app.prefs import get_bool, get_pref, set_bool, set_pref
 from app import text_entry
 from app.connector_ui import client_rect, find_window
 from app.course_chooser import (
@@ -33,8 +34,8 @@ from app.course_chooser import (
     list_mode,
     notes_view_has_cancel,
 )
-from app.gspro_screens import RECORDS_BY_KEY, group_phrases
-from app.gspro_sequences import COURSE_LIST_SCREENS, FILTER_VIEW, GAME_MENU_PANEL, NOTES_VIEW, SEQUENCES, current_panel, current_screen, current_view, randomizer_on, refresh_random
+from app.gspro_screens import MARKER_CMDS, RECORDS_BY_KEY, active_groups, group_grammar, group_phrases
+from app.gspro_sequences import COURSE_LIST_SCREENS, FILTER_VIEW, GAME_MENU_PANEL, MARKER_PANEL, NOTES_VIEW, SEQUENCES, current_panel, current_screen, current_view, map_size_cached, randomizer_on, refresh_random
 from app.gspro_ui import (
     CANCEL_BUTTON,
     CONFIRM_BUTTON,
@@ -86,35 +87,194 @@ GENTLE_LOOK = {
     "box": QColor(8, 40, 110), "width": 3, "label": QColor(190, 225, 250, 220),  # dark navy, so the box shows against the light label
     "text": QColor(15, 35, 60), "header": QColor(200, 205, 212),
 }
-_gentle = True  # the blue look is the default; "overlay red" switches to the red one
+GREY_LOOK = {  # about half grey, with white text
+    "box": QColor(128, 128, 128), "width": 3, "label": QColor(128, 128, 128, 200),
+    "text": QColor(255, 255, 255), "header": QColor(110, 110, 110),
+}
+LOOKS = {"red": RED_LOOK, "blue": GENTLE_LOOK, "grey": GREY_LOOK}
+# The look, the label size and the on-at-start choice are kept in the app's prefs, so they hold on the next start.
+LOOK_PREF, SIZE_PREF, START_PREF = "overlay.look", "overlay.size", "overlay.on_at_start"
+_look = get_pref(LOOK_PREF, "blue")  # "red", "blue" and "grey" change it, and it is saved
+if _look not in LOOKS:
+    _look = "blue"
 BOX_COLOUR = QColor(230, 30, 30)
 BOX_WIDTH = 4
 LABEL_COLOUR = QColor(255, 255, 255)
 LABEL_BACKGROUND = QColor(160, 20, 20, 147)  # a third more transparent than 220
 
 
-FONT_POINTS = 14  # the overlay label size; "overlay larger" and "overlay smaller" change it by one
 FONT_MIN, FONT_MAX = 8, 28
+
+
+def _saved_size() -> int:
+    try:
+        return max(FONT_MIN, min(FONT_MAX, int(get_pref(SIZE_PREF, "14"))))
+    except ValueError:
+        return 14
+
+
+FONT_POINTS = _saved_size()  # the overlay label size; "larger" and "smaller" change it by one, and it is saved
 
 
 def change_font(step: int) -> str:
     """Make the overlay labels bigger (step 1) or smaller (step -1). The window repaints on its next tick."""
     global FONT_POINTS
     FONT_POINTS = max(FONT_MIN, min(FONT_MAX, FONT_POINTS + step))
+    set_pref(SIZE_PREF, str(FONT_POINTS))
     log.info("overlay font: %d pt", FONT_POINTS)
     return f"Overlay font: {FONT_POINTS} pt"
 
 
-def set_look(gentle: bool) -> str:
-    """Set the help look: the red boxes, or the gentle blue ones. The window repaints on its next tick."""
-    global _gentle, BOX_COLOUR, BOX_WIDTH, LABEL_BACKGROUND, LABEL_COLOUR, SCREEN_CMDS_HEADER_BG
-    _gentle = gentle
-    look = GENTLE_LOOK if _gentle else RED_LOOK
+def _apply_look(name: str) -> None:
+    global _look, BOX_COLOUR, BOX_WIDTH, LABEL_BACKGROUND, LABEL_COLOUR, SCREEN_CMDS_HEADER_BG
+    _look = name
+    look = LOOKS[name]
     BOX_COLOUR, BOX_WIDTH = look["box"], look["width"]
     LABEL_BACKGROUND, LABEL_COLOUR = look["label"], look["text"]
     SCREEN_CMDS_HEADER_BG = look["header"]
-    log.info("help look set: %s", "blue" if _gentle else "red")
-    return "Overlay: blue" if _gentle else "Overlay: red"
+
+
+def set_look(name: str) -> str:
+    """Set the look: "red", "blue" or "grey". It is saved, so it holds on the next start. The window repaints on its next tick."""
+    _apply_look(name)
+    set_pref(LOOK_PREF, name)
+    log.info("help look set: %s", name)
+    return f"Overlay: {name}"
+
+
+def overlay_on_at_start() -> bool:
+    """Whether the overlay boxes are on when the app starts. Saved; "master" and "newbie" set it."""
+    return get_bool(START_PREF, False)
+
+
+def set_overlay_on_at_start(value: bool) -> str:
+    set_bool(START_PREF, value)
+    log.info("overlay on at start: %s", value)
+    return f"Overlay on at start: {value}"
+
+
+# The overlay preferences dialog: drawn in the middle of the window, with the screen's overlay still up under it.
+# Its boxes are the phrases below; the one for the current look says so.
+PREFS_PANEL = (0.29, 0.27, 0.42, 0.40)  # left, top, width, height, as fractions of the window
+# Every choice box is the same size, on three columns (the size row uses the first two, and its readout the third). Close is centred under them.
+_COL = (0.39, 0.49, 0.59)
+_BOX_W, _BOX_H = 0.085, 0.045
+PREFS_BOXES: dict[str, tuple[float, float, float, float]] = {
+    "red": (_COL[0], 0.37, _BOX_W, _BOX_H),
+    "blue": (_COL[1], 0.37, _BOX_W, _BOX_H),
+    "grey": (_COL[2], 0.37, _BOX_W, _BOX_H),
+    "smaller": (_COL[0], 0.48, _BOX_W, _BOX_H),
+    "larger": (_COL[1], 0.48, _BOX_W, _BOX_H),
+    "master": (_COL[0], 0.58, _BOX_W, _BOX_H),
+    "newbie": (_COL[1], 0.58, _BOX_W, _BOX_H),
+    "cancel": (0.66, 0.28, 0.035, _BOX_H),  # the X in the upper right corner of the dialog
+}
+# The text on a box where it differs from the phrase: the cancel box is an X.
+PREFS_TEXT = {"cancel": "X"}
+PREFS_GAP, PREFS_FRAME = 3, 4  # the active box's white frame: a gap of this many pixels around the box, and this thick
+_prefs_open = False
+
+
+def open_overlay_prefs() -> str:
+    global _prefs_open
+    _prefs_open = True
+    return "Overlay preferences"
+
+
+def close_overlay_prefs() -> str:
+    global _prefs_open
+    _prefs_open = False
+    return "Overlay preferences closed"
+
+
+def overlay_prefs_open() -> bool:
+    return _prefs_open
+
+
+_sync_help_open = False
+def open_sync_help() -> str:
+    global _sync_help_open
+    _sync_help_open = True
+    return "Sync help"
+
+
+def close_sync_help() -> str:
+    global _sync_help_open
+    _sync_help_open = False
+    return "Sync help closed"
+
+
+def sync_help_open() -> bool:
+    return _sync_help_open
+
+
+def _overlay_prefs_targets() -> list[tuple[str, tuple[float, float, float, float]]]:
+    return list(PREFS_BOXES.items())
+
+
+def _draw_overlay_prefs(painter, width: int, height: int) -> None:
+    """The dialog: its frame, its row labels and its boxes. Each colour box is drawn in its own colour, so the choice
+    shows what it looks like. The one in use (the look, and the start choice) has a black border."""
+    left, top, box_w, box_h = PREFS_PANEL
+    x0, y0 = int(left * width), int(top * height)
+    x1, y1 = int((left + box_w) * width), int((top + box_h) * height)
+    painter.fillRect(x0, y0, x1 - x0, y1 - y0, QColor(20, 24, 32, 200))
+    painter.setPen(QPen(BOX_COLOUR, 3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRect(x0, y0, x1 - x0, y1 - y0)
+    painter.setPen(QColor(242, 242, 242, 230))
+    base = painter.font()
+    title = QFont(base)
+    title.setPointSize(FONT_POINTS + 6)  # the title is larger than the rest
+    painter.setFont(title)
+    painter.drawText(int(0.31 * width), int(0.31 * height), "Overlay preferences")
+    painter.setFont(base)
+    in_use = {_look, "newbie" if overlay_on_at_start() else "master"}
+    # The row labels sit just left of their first box, right-aligned so their last letters line up with it.
+    label_right = _COL[0] - 0.012
+    for text, row_top in (("Color", 0.37), ("Size", 0.48)):
+        label_rect = QRect(int(0.30 * width), int(row_top * height), int((label_right - 0.30) * width), int(_BOX_H * height))
+        painter.drawText(label_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
+    # The proficiency row: its label, and under it a small note on what the choice does.
+    row_top, row_h, label_w = 0.58 * height, _BOX_H * height, int((label_right - 0.30) * width)
+    painter.drawText(QRect(int(0.30 * width), int(row_top), label_w, int(row_h * 0.55)),
+                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom, "Proficiency")
+    small = QFont(base)
+    small.setPointSize(max(1, FONT_POINTS - 5))
+    painter.setFont(small)
+    painter.drawText(QRect(int(0.30 * width), int(row_top + row_h * 0.55), label_w, int(row_h * 0.45)),
+                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop, "(show on start)")
+    painter.setFont(base)
+    for phrase, (bl, bt, bw, bh) in PREFS_BOXES.items():
+        rect = QRect(int(bl * width), int(bt * height), int(bw * width), int(bh * height))
+        look = LOOKS.get(phrase)  # a colour choice; None for the others
+        fill, edge, text = (look["label"], look["box"], look["text"]) if look else (LABEL_BACKGROUND, BOX_COLOUR, LABEL_COLOUR)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.fillRect(rect, fill)
+        painter.setPen(QPen(edge, 3))
+        painter.drawRect(rect)
+        if phrase in in_use:
+            # The black frame sits a gap outside the box, so it reads as a box of its own around the choice.
+            outer = rect.adjusted(-(PREFS_GAP + PREFS_FRAME // 2), -(PREFS_GAP + PREFS_FRAME // 2),
+                                  PREFS_GAP + PREFS_FRAME // 2, PREFS_GAP + PREFS_FRAME // 2)
+            painter.setPen(QPen(QColor(255, 255, 255), PREFS_FRAME))
+            painter.drawRect(outer)
+        # The small and large choices are drawn at the size they would make the overlay: one less, and one more.
+        font = QFont(base)
+        font.setPointSize(max(1, FONT_POINTS + {"smaller": -1, "larger": 1}.get(phrase, 0)))
+        painter.setFont(font)
+        painter.setPen(text)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, PREFS_TEXT.get(phrase, phrase[:1].upper() + phrase[1:]))
+    painter.setFont(base)
+    # The size readout, in the third column of the size row, with a white border like the rows' frames.
+    readout = QRect(int(_COL[2] * width), int(0.48 * height), int(_BOX_W * width), int(_BOX_H * height))
+    painter.setPen(QPen(QColor(255, 255, 255), 3))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRect(readout)
+    painter.setPen(QColor(242, 242, 242, 230))
+    painter.drawText(readout, Qt.AlignmentFlag.AlignCenter, f"{FONT_POINTS} pt")
+
+
 
 
 
@@ -144,10 +304,24 @@ FIT_BOXES: dict[tuple[float, float], tuple[float, float, float, float]] = {
     SEARCH_BOX: (0.0125, 0.100, 0.6405, 0.051),  # the whole search box: "use filter" and "clear filter" are both in it
 }
 # Phrases with no single click of their own, boxed where they act: (left, top, width, height) as fractions.
+BALL_ICON_BOX = (0.06, 0.0454, 0.017, 0.0214)  # the ball icon in the top left toolbar (BALL_ICON, sized like the map icons)
 BOX_ONLY: dict[str, tuple[float, float, float, float]] = {
     "change driving range distance": (0.168, 0.03, 0.129, 0.06),  # the Driving Range Distance box, ending just past the slider
     "change wind": (0.49, 0.0, 0.075, 0.045),  # the wind arrow and speed at the top, as wide as that widget
+    "toggle lights": (0.105, 0.940, 0.065, 0.036),  # the Lights check box, its word and its ? (additional ranges that have it)
+    "toggle targets": (0.189, 0.940, 0.068, 0.036),  # the Targets check box, its word and its ?
     f"toggle hand": (0.013, 0.915, 0.066, 0.075),  # the RIGHT HAND button, lower left
+    "place ball": BALL_ICON_BOX,  # the ball icon in the top left toolbar; place pin is on the same icon, listed under it
+    "place pin": BALL_ICON_BOX,
+}
+# The marker and grid word lists sit outside the large mini map, on its left, towards the top (see _draw_map_cmds).
+MAP_CMDS_RIGHT = 0.715  # the right edge of the list: just left of the map (its left edge is at 0.731)
+MAP_CMDS_TOP = 0.105  # the top of the list: level with the map's top edge
+GRID_CMDS = ("zoom in", "zoom out", "redo", "cancel place")
+# A zoom takes a number, or repeats until stop: both forms are listed on its line.
+ZOOM_CMDS_TEXT: dict[str, str] = {
+    "zoom in": "zoom in (# | a lot) → stop",
+    "zoom out": "zoom out (# | a lot) → stop",
 }
 # The chevron that closes the open driving range panel (top right of the panel).
 CLOSE_PREFERENCES_BOX = (0.2883, 0.104, 0.0195, 0.036)
@@ -156,7 +330,7 @@ CLOSE_PREFERENCES_BOX = (0.2883, 0.104, 0.0195, 0.036)
 PREFS_DISTANCE_BOX = (0.214, 0.275, 0.064, 0.042)  # the distance value box, with its pencil at the right
 PREFS_MAX_BOX = (0.018, 0.378, 0.195, 0.034)  # the Max Distance track (randomizer on)
 PREFS_MIN_BOX = (0.018, 0.430, 0.195, 0.034)  # the Min Distance track (randomizer on)
-set_look(_gentle)  # the globals the painting reads must match the default look
+_apply_look(_look)  # the globals the painting reads must match the saved look
 
 
 def _prefs_panel_targets() -> list[tuple[str, tuple[float, float, float, float]]]:
@@ -256,6 +430,27 @@ def _notes_preview_targets() -> list[tuple[str, tuple[float, float, float, float
     ]
 
 
+# The mini map's controls, boxed around each icon, and only the ones for the size the map is now (see map_size_cached).
+# A minimized map offers only map open. Fractions of the GSPro window.
+MAP_BOX_BY_SIZE: dict[tuple[str, str], tuple[float, float, float, float]] = {
+    ("map smaller", "large"): (0.7235, 0.1058, 0.0175, 0.0214),  # the two arrows at the top, fit to the icon
+    ("map close", "large"): (0.9725, 0.1058, 0.014, 0.0214),  # the chevron at the top
+    ("map larger", "small"): (0.8545, 0.5338, 0.018, 0.0213),  # the two arrows in the middle
+    ("map close", "small"): (0.9725, 0.5338, 0.014, 0.0213),  # the chevron in the middle
+    ("map open", "minimized"): (0.9685, 0.9146, 0.017, 0.0214),  # the chevron at the bottom
+}
+MAP_PHRASES = frozenset(phrase for phrase, _size in MAP_BOX_BY_SIZE)
+
+
+_labels_on = True  # debug: "toggle labels" hides the label text on the boxes, and the boxes stay
+
+
+def toggle_labels() -> str:
+    global _labels_on
+    _labels_on = not _labels_on
+    return f"Labels {'on' if _labels_on else 'off'}"
+
+
 def _shown_now(phrase: str) -> bool:
     """Some commands are only offered while their panel or menu is up, so they are not boxed before then."""
     if phrase == "close prefs":
@@ -295,6 +490,10 @@ def _filter_view_targets() -> list[tuple[str, tuple[float, float, float, float]]
 def targets(key: str | None) -> list[tuple[str, tuple[float, float, float, float]]]:
     """(label, box) for each widget the screen has a command for. The notes and filter views add their boxes to the
     screen's. A dialog on the notes view (read more, latest scores) is the only thing boxed while it is up."""
+    if overlay_prefs_open():
+        # The dialog, with the screen's overlay still up under it. A screen box with the same word as one of the dialog's
+        # (close) is left out: the dialog is the only one that listens while it is up.
+        return [*_overlay_prefs_targets(), *[t for t in _screen_targets(key) if t[0] not in PREFS_BOXES]]
     if text_entry.active() and key in COURSE_LIST_SCREENS:
         return [("end filter", FIT_BOXES[SEARCH_BOX])]  # the filter is typing: it locks out the rest of the screen
     view = current_view()
@@ -329,6 +528,8 @@ def _screen_targets(key: str | None) -> list[tuple[str, tuple[float, float, floa
         candidates += [(alias, trans.sequence) for alias in trans.aliases]  # "play course": PLAY, said plainly
         candidates.append((_course_label(trans.phrase), trans.sequence))
     candidates += [(phrase, phrase) for phrase in record.phrases]
+    if key == "driving_range" and group_grammar("Range toggles") in active_groups():
+        candidates += [(phrase, phrase) for phrase in group_phrases("Range toggles")]  # only while they listen (the check passed)
     for name in record.groups:
         candidates += [(phrase, phrase) for phrase in group_phrases(name)]
     boxes: dict[tuple, tuple[tuple[float, float, float, float], list[str]]] = {}
@@ -338,8 +539,13 @@ def _screen_targets(key: str | None) -> list[tuple[str, tuple[float, float, floa
             continue
         if _wrong_mode(phrase, key):
             continue
+        if phrase in MAP_PHRASES:  # the mini map's controls: only those for the size it is now
+            size = map_size_cached()
+            if (phrase, size) in MAP_BOX_BY_SIZE:
+                boxes.setdefault(("map", phrase, size), (MAP_BOX_BY_SIZE[(phrase, size)], []))[1].append(phrase)
+            continue
         if phrase in BOX_ONLY:
-            boxes.setdefault(("only", phrase), (BOX_ONLY[phrase], []))[1].append(phrase)
+            boxes.setdefault(("only", BOX_ONLY[phrase]), (BOX_ONLY[phrase], []))[1].append(phrase)  # phrases on one box share its label
             continue
         if not _shown_now(phrase):
             continue  # close prefs only while the panel is open, cancel only while the menu is
@@ -393,7 +599,7 @@ CLUB_LIST_LEFT = 0.01  # the club list sits at bottom left, above the club tile
 CLUB_LIST_TOP = 0.50
 CLUB_LIST_BOTTOM = 0.92  # the list's red box runs down over the driver icon, the club tile at bottom left
 # Commands gathered into one black label next to the game menu button, not boxed one by one on the screen.
-SCREEN_CMDS = ("look left", "look right", f"toggle ui", f"toggle pin", "reset aim", f"toggle heat map", f"toggle green grid")  # end round is on the show game menu box
+SCREEN_CMDS = ("look left", "look right", f"toggle ui", f"toggle pin", "reset aim", f"toggle heat map", f"toggle green grid", "place marker")  # end round is on the show game menu box
 # How a command reads in the list where it differs: a look is ended by saying stop once it is where you want it.
 SCREEN_CMDS_TEXT: dict[str, str] = {"look left": "look left → stop", "look right": "look right → stop"}
 # How a command reads on its label where it differs from the phrase. "→ stop" says to say stop once a drag is where
@@ -438,15 +644,31 @@ def _screen_cmds(key: str | None) -> list[str]:
 
 
 def _draw_screen_cmds(painter, width: int, height: int, key: str | None) -> None:
-    """A vertical list: a grey heading, then each command on a red line. Each line is only as wide as its text."""
-    phrases = _screen_cmds(key)
+    _draw_cmd_list(painter, "screen cmds", _screen_cmds(key), int(SCREEN_CMDS_RIGHT * width), int(SCREEN_CMDS_TOP * height), SCREEN_CMDS_TEXT)
+
+
+def _draw_map_cmds(painter, width: int, height: int) -> None:
+    """The words that are live for the mini map's placements, left of the large map: the grid's while the grid is up,
+    the marker panel's while place marker holds the button."""
+    from app.gspro_grid import is_showing as grid_showing
+
+    if grid_showing():
+        heading, phrases, texts = "grid cmds", GRID_CMDS, ZOOM_CMDS_TEXT
+    elif current_panel() == MARKER_PANEL:
+        heading, phrases, texts = "marker cmds", MARKER_CMDS, ZOOM_CMDS_TEXT
+    else:
+        return
+    _draw_cmd_list(painter, heading, phrases, int(MAP_CMDS_RIGHT * width), int(MAP_CMDS_TOP * height), texts)
+
+
+def _draw_cmd_list(painter, heading: str, phrases, right: int, top: int, texts: dict) -> None:
+    """A vertical list: a grey heading, then each command on a red line. Each line is only as wide as its text.
+    right and top are where the set sits, in pixels; longer lines grow to the left."""
     if not phrases:
         return
     metrics = painter.fontMetrics()
     line_h = metrics.height()
-    right = int(SCREEN_CMDS_RIGHT * width)
-    top = int(SCREEN_CMDS_TOP * height)
-    lines = [("screen cmds", SCREEN_CMDS_HEADER_BG), *((SCREEN_CMDS_TEXT.get(phrase, phrase), LABEL_BACKGROUND) for phrase in phrases)]
+    lines = [(heading, SCREEN_CMDS_HEADER_BG), *((texts.get(phrase, phrase), LABEL_BACKGROUND) for phrase in phrases)]
     widest = max(metrics.horizontalAdvance(text) + 12 for text, _ in lines)
     left = right - widest  # the set grows to the left as its longest line grows
     # one red border round the whole set, padded; the blocks sit inside it, left-aligned
@@ -475,15 +697,16 @@ def _draw_club_list(painter, width: int, height: int) -> None:
     # each column is as wide as its longest name, so the second column starts after the first
     col_widths = [max(metrics.horizontalAdvance(line) + 12 for line in lines[c * per_column:(c + 1) * per_column]) for c in range(2)]
     col_x = [x0, x0 + col_widths[0] + 6]
-    painter.setPen(QPen(BOX_COLOUR, BOX_WIDTH))
+    # One panel, as the NATO list: a dark translucent background, a thin border, and plain text (no filled tile per club).
+    panel_w, panel_h = col_x[1] + col_widths[1] - x0, row_h * per_column
+    painter.fillRect(x0, y0, panel_w, panel_h, QColor(20, 24, 32, 150))
+    painter.setPen(QPen(BOX_COLOUR, 2))
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRect(x0, y0, col_x[1] + col_widths[1] - x0, row_h * per_column)
+    painter.drawRect(x0, y0, panel_w, panel_h)
+    painter.setPen(QColor(242, 242, 242, 230))
     for index, line in enumerate(lines):
         column, row = divmod(index, per_column)
-        x, y = col_x[column], y0 + row * row_h
-        painter.fillRect(QRect(x, y, metrics.horizontalAdvance(line) + 12, row_h - 2), LABEL_BACKGROUND)
-        painter.setPen(LABEL_COLOUR)
-        painter.drawText(x + 6, y + metrics.ascent() + 2, line)
+        painter.drawText(col_x[column] + 6, y0 + row * row_h + metrics.ascent() + 2, line)
 
 
 class _Boxes(QWidget):
@@ -504,7 +727,11 @@ class _Boxes(QWidget):
         font.setPointSize(FONT_POINTS)
         font.setBold(True)
         painter.setFont(font)
+        if _prefs_open:
+            _draw_overlay_prefs(painter, width, height)
         for label, (left, top, box_w, box_h) in targets(current_screen()):
+            if _prefs_open and label in PREFS_BOXES:
+                continue  # the dialog drew its own boxes, above
             if label == "show game menu":
                 label = "show game menu | end round"  # end round is opened from the same button, so it reads with it
             if label == "begin practice":
@@ -526,12 +753,14 @@ class _Boxes(QWidget):
             block_w = max(metrics.horizontalAdvance(line) for line in lines) + 12
             x0 = max(0, min(x0, width - block_w))  # a label at the right edge (show game menu) stays on the window
             line_h = metrics.height()
-            painter.fillRect(QRect(x0, y0, block_w, line_h * len(lines) + 8), LABEL_BACKGROUND)
-            painter.setPen(LABEL_COLOUR)
-            for index, line in enumerate(lines):
-                painter.drawText(x0 + 6, y0 + 4 + index * line_h + metrics.ascent(), line)
+            if _labels_on:  # the debug switch ("toggle labels") hides the text and keeps the box
+                painter.fillRect(QRect(x0, y0, block_w, line_h * len(lines) + 8), LABEL_BACKGROUND)
+                painter.setPen(LABEL_COLOUR)
+                for index, line in enumerate(lines):
+                    painter.drawText(x0 + 6, y0 + 4 + index * line_h + metrics.ascent(), line)
         if _has_club(current_screen()) and not current_panel():
             _draw_club_list(painter, width, height)
+        _draw_map_cmds(painter, width, height)
         if not current_panel():  # the screen cmds are live only with no panel up; a panel has its own help
             _draw_screen_cmds(painter, width, height, current_screen())
         painter.end()

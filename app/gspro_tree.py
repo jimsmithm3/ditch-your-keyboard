@@ -78,11 +78,11 @@ END_ROUND = Action(
 )
 
 SCREENS: tuple[Screen, ...] = (
-    Screen("home", "Home", None, actions=(EXIT, PLAYERS, SETTINGS), shot="home_screen.png"),
+    Screen("home", "Home chooser", None, actions=(EXIT, PLAYERS, SETTINGS), shot="home_screen.png"),
     # Children of home, in the order of the buttons: play, practice, challenges, tournaments, online match.
     Screen(
         "local_match",
-        "Local match",
+        "Play course chooser",
         "home",
         f"begin play",
         (f"begin play",),
@@ -91,7 +91,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "practice",
-        "Practice",
+        "Practice chooser",
         "home",
         f"begin practice",
         (f"begin practice",),
@@ -103,7 +103,7 @@ SCREENS: tuple[Screen, ...] = (
     Screen("online", "Online match", "home", f"begin online match"),
     Screen(
         "range",
-        "GSPro Range",
+        "GSPro practice range",
         "practice",
         f"begin gspro practice range",
         (f"begin gspro practice range", f"begin gspro practice range now"),
@@ -112,7 +112,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "on_course",
-        "On course practice",
+        "On practice course chooser",
         "practice",
         f"begin on course practice",
         (f"begin on course practice", f"begin on course practice now"),
@@ -121,7 +121,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "additional",
-        "Additional Driving Ranges",
+        "Additional ranges chooser",
         "practice",
         f"begin additional ranges",
         (f"begin additional ranges", f"begin additional ranges now"),
@@ -130,7 +130,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "driving_range",
-        "Additional Range",
+        "Additional range",
         "additional",
         "play <range name>",
         actions=(SHOW_MENU, END_ROUND),
@@ -140,7 +140,7 @@ SCREENS: tuple[Screen, ...] = (
     # Local match (play). The screen is the same; the split keeps each path's sync and memory apart.
     Screen(
         "round_settings_practice",
-        "Round Settings - Practice",
+        "Practice course settings",
         "on_course",
         "play <name>",
         ("play course",),
@@ -149,7 +149,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "course_practice",
-        "Course Practice",
+        "Practice course",
         "round_settings_practice",
         "play <course>",
         ("now",),
@@ -158,7 +158,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "round_settings_play",
-        "Round Settings - Play",
+        "Play course settings",
         "local_match",
         "play <name>",
         ("play course",),
@@ -167,7 +167,7 @@ SCREENS: tuple[Screen, ...] = (
     ),
     Screen(
         "play",
-        "Course play",
+        "Play course",
         "round_settings_play",
         "play <course>",
         ("now",),
@@ -181,17 +181,17 @@ _BY_KEY = {screen.key: screen for screen in SCREENS}
 # "sync to <screen>" tells the app which screen GSPro is on, when it has drifted out of sync.
 # It clicks nothing. The phrase maps to a screen key.
 SYNC_PHRASES: dict[str, str] = {
-    "sync to home screen": "home",
-    "sync to practice screen": "practice",
-    "sync to gspro practice range screen": "range",
-    "sync to on course practice screen": "on_course",
-    "sync to additional ranges screen": "additional",
-    "sync to local match screen": "local_match",
-    "sync to driving range screen": "driving_range",
-    "sync to round settings practice screen": "round_settings_practice",
-    "sync to course practice screen": "course_practice",
-    "sync to round settings play screen": "round_settings_play",
-    "sync to course play screen": "play",
+    "sync to home chooser": "home",
+    "sync to practice chooser": "practice",
+    "sync to gspro practice range": "range",
+    "sync to on practice course chooser": "on_course",
+    "sync to additional ranges chooser": "additional",
+    "sync to play course chooser": "local_match",
+    "sync to additional range": "driving_range",
+    "sync to practice course settings": "round_settings_practice",
+    "sync to practice course": "course_practice",
+    "sync to play course settings": "round_settings_play",
+    "sync to play course": "play",
 }
 
 

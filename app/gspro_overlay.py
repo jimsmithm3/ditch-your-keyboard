@@ -88,12 +88,21 @@ def _place() -> bool:
     return True
 
 
+def _screen_name() -> str:
+    """The screen GSPro is on, as the tree names it. "none" when the app does not know the screen."""
+    from app.gspro_screens import RECORDS_BY_KEY
+    from app.gspro_sequences import current_screen
+
+    record = RECORDS_BY_KEY.get(current_screen())
+    return record.name if record is not None else "none"
+
+
 def _refresh_debug() -> None:
-    """The grammar list, to the right of the status line."""
-    if not (debug_enabled() and _grammars):
+    """The current screen, to the right of the status line."""
+    if not debug_enabled():
         _debug.hide()
         return
-    _debug.setText("<b>Listening</b><br>" + "<br>".join(_grammars))
+    _debug.setText(f"<b>Screen: {_screen_name()}</b>")
     _debug.adjustSize()
     _debug.move(_label.x() - DEBUG_GAP - _debug.width(), _label.y())  # to the left of the status line
     _debug.show()

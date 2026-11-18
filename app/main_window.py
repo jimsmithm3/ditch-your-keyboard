@@ -86,6 +86,7 @@ class MainWindow:
         self.listener.command.connect(self._on_command)
         self.listener.notice.connect(self._on_notice)
         self.listener.help_boxes.connect(self._on_help_boxes)
+        self.listener.sync_tree.connect(self._on_sync_tree)
         self.listener.grid.connect(self._on_grid)
         self.listener.legend.connect(self._on_legend)
         self.listener.grammars.connect(self._on_grammars)
@@ -106,7 +107,20 @@ class MainWindow:
         self._working_timer.timeout.connect(self._show_working)
         self._working_timer.start(300)
         self.listener.start()
+        # The overlay can be on at start (its saved choice). GSPro may not be up yet, so keep trying until its boxes show.
+        self._help_retry = QTimer(self.window)
+        self._help_retry.timeout.connect(self._retry_help)
+        self._help_retry.start(1000)
         log.info("loaded %s", ui_path)
+
+    def _retry_help(self) -> None:
+        from app.connector_ui import find_window
+        from app.gspro_boxes import apply, is_showing
+
+        if self.listener is None or not self.listener._help_open or is_showing():
+            return
+        if find_window() is not None:
+            apply(True)  # GSPro is up and the overlay should be on: draw its boxes
 
     def _leave_prefs(self) -> None:
         self.shell.select("Voice")
@@ -220,6 +234,16 @@ class MainWindow:
         from app.gspro_legend import apply
 
         apply(state)
+
+    def _on_sync_tree(self, shown: bool) -> None:
+        """"sync help" shows the screen tree window; cancel, or a screen name said, hides it."""
+        from app.gspro_boxes import close_sync_help
+        from app.screen_table_dialog import hide_sync_tree, show_sync_tree
+
+        if shown:
+            show_sync_tree(on_close=close_sync_help)  # its X closes the sync help too
+        else:
+            hide_sync_tree()
 
     def _on_help_boxes(self, shown: bool) -> None:
         from app.gspro_boxes import apply
